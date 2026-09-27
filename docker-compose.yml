@@ -1,0 +1,25 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: dominio-sierra-postgres
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: dominio_sierra
+      POSTGRES_USER: dominio_sierra_app
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+
+    ports:
+      - "5432:5432"
+
+    volumes:
+      - dominio_sierra_postgres_data:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dominio_sierra_app -d dominio_sierra"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  dominio_sierra_postgres_data:

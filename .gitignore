@@ -1,0 +1,16 @@
+.env
+.env.*
+!.env.example
+
+**/bin/
+**/obj/
+**/node_modules/
+**/dist/
+**/.angular/
+*.user
+*.suo
+.vs/
+.idea/
+*.swp
+Otros/
+Angular/public_html/

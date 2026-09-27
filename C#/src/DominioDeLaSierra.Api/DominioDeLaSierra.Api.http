@@ -1,0 +1,6 @@
+@DominioDeLaSierra.Api_HostAddress = http://localhost:5141
+
+GET {{DominioDeLaSierra.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
