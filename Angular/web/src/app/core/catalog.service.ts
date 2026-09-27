@@ -1,5 +1,6 @@
-import { HttpClient, HttpParams } from '@angular/common/http';
-import { Injectable, computed, inject, signal } from '@angular/core';
+import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
+import { Injectable, inject, signal } from '@angular/core';
+import { Observable, catchError, forkJoin, map, of, throwError } from 'rxjs';
 import { environment } from '../../environments/environment';
 import { Category, Product } from './models';
 
@@ -16,6 +17,13 @@ interface ProductListItemDto {
   categorySlug: string;
 }
 
+interface CategoryListItemDto {
+  id: string;
+  name: string;
+  slug: string;
+  parentCategoryId: string | null;
+}
+
 interface PagedProductsDto {
   items: ProductListItemDto[];
   page: number;
@@ -30,13 +38,14 @@ const fallbackImage = '/assets/brand/rufete-vineyard-v2.png';
 export class CatalogService {
   private readonly http = inject(HttpClient);
   private readonly productsSignal = signal<Product[]>([]);
+  private readonly categoriesSignal = signal<Category[]>([]);
   private readonly loadingSignal = signal(true);
   private readonly errorSignal = signal<string | null>(null);
 
   readonly products = this.productsSignal.asReadonly();
+  readonly categories = this.categoriesSignal.asReadonly();
   readonly loading = this.loadingSignal.asReadonly();
   readonly error = this.errorSignal.asReadonly();
-  readonly categories = computed(() => this.uniqueCategories(this.productsSignal()));
 
   constructor() {
     this.refresh();
@@ -44,6 +53,19 @@ export class CatalogService {
 
   getProduct(slug: string): Product | undefined {
     return this.productsSignal().find((product) => product.slug === slug);
+  }
+
+  getProductBySlug(slug: string): Observable<Product | null> {
+    return this.http.get<ProductListItemDto>(`${environment.apiBaseUrl}/api/v1/products/${encodeURIComponent(slug)}`).pipe(
+      map((item) => this.toProduct(item)),
+      catchError((error: HttpErrorResponse) => {
+        if (error.status === 404) {
+          return of(null);
+        }
+
+        return throwError(() => error);
+      })
+    );
   }
 
   getFeatured(): Product[] {
@@ -55,14 +77,23 @@ export class CatalogService {
     this.errorSignal.set(null);
 
     const params = new HttpParams().set('page', '1').set('pageSize', '100');
+    const products$ = this.http.get<PagedProductsDto>(`${environment.apiBaseUrl}/api/v1/products`, { params });
+    const categories$ = this.http.get<CategoryListItemDto[]>(`${environment.apiBaseUrl}/api/v1/categories`);
 
-    this.http.get<PagedProductsDto>(`${environment.apiBaseUrl}/api/v1/products`, { params }).subscribe({
-      next: (page) => {
-        this.productsSignal.set((page.items ?? []).map((item) => this.toProduct(item)));
+    forkJoin({ products: products$, categories: categories$ }).subscribe({
+      next: ({ products, categories }) => {
+        this.productsSignal.set((products.items ?? []).map((item) => this.toProduct(item)));
+        this.categoriesSignal.set((categories ?? []).map((category) => ({
+          id: category.id,
+          name: category.name,
+          slug: category.slug,
+          description: ''
+        })));
         this.loadingSignal.set(false);
       },
       error: () => {
         this.productsSignal.set([]);
+        this.categoriesSignal.set([]);
         this.errorSignal.set('No hemos podido cargar el catálogo desde la bodega. Inténtalo de nuevo.');
         this.loadingSignal.set(false);
       }
@@ -87,21 +118,5 @@ export class CatalogService {
       accent: '#8f3541',
       featured: true
     };
-  }
-
-  private uniqueCategories(products: Product[]): Category[] {
-    const seen = new Map<string, Category>();
-    for (const product of products) {
-      if (seen.has(product.categorySlug)) {
-        continue;
-      }
-      seen.set(product.categorySlug, {
-        id: product.categoryId,
-        name: product.categoryName,
-        slug: product.categorySlug,
-        description: ''
-      });
-    }
-    return [...seen.values()];
   }
 }

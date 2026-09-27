@@ -1,6 +1,16 @@
 @DominioDeLaSierra.Api_HostAddress = http://localhost:5141
 
-GET {{DominioDeLaSierra.Api_HostAddress}}/weatherforecast/
+GET {{DominioDeLaSierra.Api_HostAddress}}/api/v1/products?page=1&pageSize=24
+Accept: application/json
+
+###
+
+GET {{DominioDeLaSierra.Api_HostAddress}}/api/v1/products/vino-crianza
+Accept: application/json
+
+###
+
+GET {{DominioDeLaSierra.Api_HostAddress}}/api/v1/categories
 Accept: application/json
 
 ###

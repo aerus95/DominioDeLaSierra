@@ -1,13 +1,13 @@
-import { Component, computed, inject } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { Component, inject } from '@angular/core';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { DecimalPipe } from '@angular/common';
 import { ActivatedRoute, RouterLink } from '@angular/router';
-import { map } from 'rxjs';
+import { map, of, switchMap } from 'rxjs';
 import { CatalogService } from '../../core/catalog.service';
 import { CartService } from '../../core/cart.service';
 
 @Component({ selector: 'ds-product-detail', standalone: true, imports: [RouterLink, DecimalPipe], template: `
-  @if (catalog.loading()) {
+  @if (product() === undefined) {
     <section class="shell section-pad"><p class="empty-state">Cargando el vino…</p></section>
   } @else {
     @if (product(); as item) {
@@ -20,8 +20,12 @@ import { CartService } from '../../core/cart.service';
 export class ProductDetailComponent {
   added = false;
   private readonly route = inject(ActivatedRoute);
-  readonly catalog = inject(CatalogService);
+  private readonly catalog = inject(CatalogService);
   public readonly cart = inject(CartService);
   private readonly slug = toSignal(this.route.paramMap.pipe(map((params) => params.get('slug') ?? '')), { initialValue: '' });
-  readonly product = computed(() => this.catalog.getProduct(this.slug()));
+  readonly product = toSignal(
+    toObservable(this.slug).pipe(
+      switchMap((slug) => slug ? this.catalog.getProductBySlug(slug) : of(null))
+    )
+  );
 }

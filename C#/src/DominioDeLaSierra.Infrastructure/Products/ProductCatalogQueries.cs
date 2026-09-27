@@ -70,4 +70,27 @@ public sealed class ProductCatalogQueries(ApplicationDbContext dbContext) : IPro
             totalItems,
             totalPages);
     }
+
+    public async Task<ProductListItemDto?> GetProductBySlugAsync(
+        GetProductBySlugQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        return await dbContext.Products
+            .AsNoTracking()
+            .Where(product => product.Active)
+            .Where(product => product.Category.Active)
+            .Where(product => product.Slug == query.Slug)
+            .Select(product => new ProductListItemDto(
+                product.Id,
+                product.Reference,
+                product.Name,
+                product.Slug,
+                product.Description,
+                product.Price,
+                product.VatRate,
+                product.CategoryId,
+                product.Category.Name,
+                product.Category.Slug))
+            .FirstOrDefaultAsync(cancellationToken);
+    }
 }

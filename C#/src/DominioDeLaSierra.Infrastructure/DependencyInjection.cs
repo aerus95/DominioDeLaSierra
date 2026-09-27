@@ -1,4 +1,6 @@
+using DominioDeLaSierra.Application.Categories.GetCategories;
 using DominioDeLaSierra.Application.Products.GetProducts;
+using DominioDeLaSierra.Infrastructure.Categories;
 using DominioDeLaSierra.Infrastructure.Persistence;
 using DominioDeLaSierra.Infrastructure.Products;
 using Microsoft.EntityFrameworkCore;
@@ -17,6 +19,7 @@ public static class DependencyInjection
             options.UseNpgsql(PostgresConnection.Build(configuration)));
 
         services.AddScoped<IProductCatalogQueries, ProductCatalogQueries>();
+        services.AddScoped<ICategoryCatalogQueries, CategoryCatalogQueries>();
 
         return services;
     }

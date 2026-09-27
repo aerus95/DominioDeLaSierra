@@ -29,4 +29,26 @@ public sealed class ProductsController(IProductCatalogQueries productCatalogQuer
             return BadRequest(new { error = exception.Message });
         }
     }
+
+    [HttpGet("{slug}")]
+    public async Task<ActionResult<ProductListItemDto>> GetBySlug(
+        string slug,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var query = GetProductBySlugQuery.Create(slug);
+            var product = await productCatalogQueries.GetProductBySlugAsync(query, cancellationToken);
+            if (product is null)
+            {
+                return NotFound(new { error = "Product not found." });
+            }
+
+            return Ok(product);
+        }
+        catch (ArgumentException exception)
+        {
+            return BadRequest(new { error = exception.Message });
+        }
+    }
 }
