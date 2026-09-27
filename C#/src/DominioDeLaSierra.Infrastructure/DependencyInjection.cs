@@ -1,5 +1,9 @@
+using DominioDeLaSierra.Application.Admin;
+using DominioDeLaSierra.Application.Categories.CreateCategory;
 using DominioDeLaSierra.Application.Categories.GetCategories;
+using DominioDeLaSierra.Application.Products.CreateProduct;
 using DominioDeLaSierra.Application.Products.GetProducts;
+using DominioDeLaSierra.Infrastructure.Admin;
 using DominioDeLaSierra.Infrastructure.Categories;
 using DominioDeLaSierra.Infrastructure.Persistence;
 using DominioDeLaSierra.Infrastructure.Products;
@@ -20,6 +24,9 @@ public static class DependencyInjection
 
         services.AddScoped<IProductCatalogQueries, ProductCatalogQueries>();
         services.AddScoped<ICategoryCatalogQueries, CategoryCatalogQueries>();
+        services.AddScoped<IAdminCatalogQueries, AdminCatalogQueries>();
+        services.AddScoped<ICreateCategory, CreateCategoryService>();
+        services.AddScoped<ICreateProduct, CreateProductService>();
 
         return services;
     }
