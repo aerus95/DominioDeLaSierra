@@ -5,3 +5,10 @@ public sealed record CreateCategoryCommand(
     string? Slug,
     Guid? ParentCategoryId,
     bool Active = true);
+
+public sealed record CreatedCategoryDto(
+    Guid Id,
+    string Name,
+    string Slug,
+    Guid? ParentCategoryId,
+    bool Active);

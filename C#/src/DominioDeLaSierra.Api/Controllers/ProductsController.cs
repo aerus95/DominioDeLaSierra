@@ -1,4 +1,5 @@
 using DominioDeLaSierra.Application.Common;
+using DominioDeLaSierra.Application.Products.CreateProduct;
 using DominioDeLaSierra.Application.Products.GetProducts;
 using Microsoft.AspNetCore.Mvc;
 
@@ -6,7 +7,9 @@ namespace DominioDeLaSierra.Api.Controllers;
 
 [ApiController]
 [Route("api/v1/products")]
-public sealed class ProductsController(IProductCatalogQueries productCatalogQueries) : ControllerBase
+public sealed class ProductsController(
+    IProductCatalogQueries productCatalogQueries,
+    ICreateProduct createProduct) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<PagedResult<ProductListItemDto>>> Get(
@@ -51,4 +54,66 @@ public sealed class ProductsController(IProductCatalogQueries productCatalogQuer
             return BadRequest(new { error = exception.Message });
         }
     }
+
+    // TODO: Proteger este endpoint con autenticación y autorización antes de exponerlo en producción pública.
+    [HttpPost]
+    public async Task<ActionResult<CreatedProductDto>> Post(
+        [FromBody] CreateProductRequest? request,
+        CancellationToken cancellationToken)
+    {
+        if (request is null)
+        {
+            return BadRequest(new { error = "El cuerpo de la petición es obligatorio." });
+        }
+
+        if (request.CategoryId is not Guid categoryId)
+        {
+            return BadRequest(new { error = "Selecciona una categoría." });
+        }
+
+        if (request.Price is not decimal price)
+        {
+            return BadRequest(new { error = "El precio es obligatorio." });
+        }
+
+        if (request.VatRate is not decimal vatRate)
+        {
+            return BadRequest(new { error = "El IVA es obligatorio." });
+        }
+
+        try
+        {
+            var created = await createProduct.ExecuteAsync(
+                new CreateProductCommand(
+                    request.Reference ?? string.Empty,
+                    request.Name ?? string.Empty,
+                    request.Slug,
+                    request.Description ?? string.Empty,
+                    categoryId,
+                    price,
+                    vatRate,
+                    request.Active),
+                cancellationToken);
+
+            return CreatedAtAction(nameof(GetBySlug), new { slug = created.Slug }, created);
+        }
+        catch (ArgumentException exception)
+        {
+            return BadRequest(new { error = exception.Message });
+        }
+        catch (InvalidOperationException exception)
+        {
+            return Conflict(new { error = exception.Message });
+        }
+    }
 }
+
+public sealed record CreateProductRequest(
+    string? Reference,
+    string? Name,
+    string? Slug,
+    string? Description,
+    Guid? CategoryId,
+    decimal? Price,
+    decimal? VatRate,
+    bool Active = true);

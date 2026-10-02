@@ -8,7 +8,7 @@ namespace DominioDeLaSierra.Infrastructure.Categories;
 
 public sealed class CreateCategoryService(ApplicationDbContext dbContext) : ICreateCategory
 {
-    public async Task<Guid> ExecuteAsync(CreateCategoryCommand command, CancellationToken cancellationToken = default)
+    public async Task<CreatedCategoryDto> ExecuteAsync(CreateCategoryCommand command, CancellationToken cancellationToken = default)
     {
         var name = command.Name.Trim();
         if (name.Length is 0 or > 150)
@@ -43,6 +43,11 @@ public sealed class CreateCategoryService(ApplicationDbContext dbContext) : ICre
         var category = new Category(Guid.NewGuid(), name, slug, command.ParentCategoryId, command.Active);
         dbContext.Categories.Add(category);
         await dbContext.SaveChangesAsync(cancellationToken);
-        return category.Id;
+        return new CreatedCategoryDto(
+            category.Id,
+            category.Name,
+            category.Slug,
+            category.ParentCategoryId,
+            category.Active);
     }
 }

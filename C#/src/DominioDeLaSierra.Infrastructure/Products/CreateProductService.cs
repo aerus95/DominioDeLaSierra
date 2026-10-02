@@ -8,7 +8,7 @@ namespace DominioDeLaSierra.Infrastructure.Products;
 
 public sealed class CreateProductService(ApplicationDbContext dbContext) : ICreateProduct
 {
-    public async Task<Guid> ExecuteAsync(CreateProductCommand command, CancellationToken cancellationToken = default)
+    public async Task<CreatedProductDto> ExecuteAsync(CreateProductCommand command, CancellationToken cancellationToken = default)
     {
         var reference = command.Reference.Trim();
         var name = command.Name.Trim();
@@ -74,6 +74,17 @@ public sealed class CreateProductService(ApplicationDbContext dbContext) : ICrea
 
         dbContext.Products.Add(product);
         await dbContext.SaveChangesAsync(cancellationToken);
-        return product.Id;
+        return new CreatedProductDto(
+            product.Id,
+            product.Reference,
+            product.Name,
+            product.Slug,
+            product.Description,
+            product.CategoryId,
+            product.Price,
+            product.VatRate,
+            product.Active,
+            product.CreatedAt,
+            product.UpdatedAt);
     }
 }
