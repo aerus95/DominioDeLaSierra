@@ -16,7 +16,8 @@
       .welcome-inner{position:absolute;z-index:2;left:55%;right:7%;top:50%;transform:translateY(-50%);max-width:590px;text-align:left}
       .welcome-brand{display:flex;align-items:center;gap:20px;margin-bottom:clamp(45px,8vh,90px)}
       .welcome-kicker{font:600 10px/1.5 system-ui,sans-serif;letter-spacing:.25em;text-transform:uppercase;color:#d9b784;margin:0}
-      .welcome-seal{display:grid;place-items:center;width:64px;height:64px;flex:0 0 auto;border:1px solid #d3ad76;border-radius:50%;font-size:20px;letter-spacing:2px;color:#e2c59d;box-shadow:0 0 0 7px #d8bd9709}
+      .welcome-seal{display:block;width:74px;height:64px;flex:0 0 auto}
+      .welcome-seal img{display:block;width:100%;height:100%}
       .welcome-title{font-size:clamp(46px,5.2vw,88px);line-height:.92;margin:0 0 24px;font-weight:400;letter-spacing:-.045em}
       .welcome-title em{display:block;color:#dfc095;font-weight:400}
       .welcome-caption{font:14px/1.75 system-ui,sans-serif;color:#d7cbd0;margin:0;max-width:380px}
@@ -36,7 +37,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="icon" type="image/svg+xml" href="favicon.svg?v=ds-signature-4">
   </head>
   <body>
     <div id="welcome-loader" role="status" aria-live="polite" aria-label="Cargando Dominio de la Sierra">
@@ -44,7 +45,7 @@
       <div class="welcome-panel" aria-hidden="true"></div>
       <div class="welcome-vine" aria-hidden="true"></div>
       <div class="welcome-inner">
-        <div class="welcome-brand"><div class="welcome-seal" aria-hidden="true">DS</div><p class="welcome-kicker">San Esteban de la Sierra<br>Salamanca · España</p></div>
+        <div class="welcome-brand"><div class="welcome-seal" aria-hidden="true"><img src="/assets/brand/dominio-emblem-light.svg" width="74" height="64" alt=""></div><p class="welcome-kicker">San Esteban de la Sierra<br>Salamanca · España</p></div>
         <p class="welcome-title">Dominio <em>de la Sierra</em></p>
         <p class="welcome-caption" id="welcome-caption">Abrimos la bodega. La Rufete, el paisaje y una copa están a punto de encontrarse.</p>
         <div class="welcome-progress" aria-hidden="true"><span>ENTRANDO</span><div class="welcome-track"></div></div>

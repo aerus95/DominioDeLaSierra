@@ -2,6 +2,8 @@ import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http'
 import { Injectable, inject, signal } from '@angular/core';
 import { Observable, catchError, forkJoin, map, of, throwError } from 'rxjs';
 import { environment } from '../../environments/environment';
+import { bottleImage } from './product-visual';
+import { previewProducts, previewCategories } from './preview-catalog';
 import { Category, Product } from './models';
 
 interface ProductListItemDto {
@@ -32,8 +34,6 @@ interface PagedProductsDto {
   totalPages: number;
 }
 
-const fallbackImage = '/assets/brand/rufete-vineyard-v2.png';
-
 @Injectable({ providedIn: 'root' })
 export class CatalogService {
   private readonly http = inject(HttpClient);
@@ -56,6 +56,7 @@ export class CatalogService {
   }
 
   getProductBySlug(slug: string): Observable<Product | null> {
+    if (environment.mockCatalog) return of(this.getProduct(slug) ?? null);
     return this.http.get<ProductListItemDto>(`${environment.apiBaseUrl}/api/v1/products/${encodeURIComponent(slug)}`).pipe(
       map((item) => this.toProduct(item)),
       catchError((error: HttpErrorResponse) => {
@@ -73,6 +74,13 @@ export class CatalogService {
   }
 
   refresh(): void {
+    if (environment.mockCatalog) {
+      this.productsSignal.set(previewProducts);
+      this.categoriesSignal.set(previewCategories);
+      this.errorSignal.set(null);
+      this.loadingSignal.set(false);
+      return;
+    }
     this.loadingSignal.set(true);
     this.errorSignal.set(null);
 
@@ -114,7 +122,7 @@ export class CatalogService {
       vintage: '',
       grape: '',
       alcohol: '',
-      image: fallbackImage,
+      image: bottleImage(item),
       accent: '#8f3541',
       featured: true
     };

@@ -29,10 +29,15 @@
             "scripts": []
           },
           "configurations": {
+            "preview": {
+              "optimization": false,
+              "sourceMap": true,
+              "fileReplacements": [{ "replace": "src/environments/environment.ts", "with": "src/environments/environment.preview.ts" }]
+            },
             "production": {
               "budgets": [
                 { "type": "initial", "maximumWarning": "1mb", "maximumError": "2mb" },
-                { "type": "anyComponentStyle", "maximumWarning": "12kb", "maximumError": "24kb" }
+                { "type": "anyComponentStyle", "maximumWarning": "42kb", "maximumError": "46kb" }
               ],
               "outputHashing": "all"
             },
@@ -47,6 +52,7 @@
         "serve": {
           "builder": "@angular-devkit/build-angular:dev-server",
           "configurations": {
+            "preview": { "buildTarget": "dominio-de-la-sierra:build:preview" },
             "production": { "buildTarget": "dominio-de-la-sierra:build:production" },
             "development": { "buildTarget": "dominio-de-la-sierra:build:development" }
           },

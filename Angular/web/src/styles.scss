@@ -39,12 +39,11 @@ em { color: var(--wine-light); font-style: italic; }
 .nav-wrap { min-height: 90px; display: flex; align-items: center; justify-content: space-between; gap: 2rem; }
 .brand { display: inline-flex; align-items: center; gap: .65rem; font-size: 1.25rem; line-height: .9; color: var(--wine); white-space: nowrap; }
 .brand em { display: block; font-family: 'DM Sans', sans-serif; font-size: .52em; letter-spacing: .16em; text-transform: uppercase; color: var(--gold); }
-.brand-mark { border: 1px solid var(--wine); border-radius: 50%; display: inline-grid; place-items: center; width: 38px; height: 38px; font-family: 'DM Sans', sans-serif; font-size: .75rem; letter-spacing: .05em; }
+.brand-mark { border: 0; border-radius: 0; background: transparent; display: inline-grid; place-items: center; width: 38px; height: 38px; font-family: 'DM Sans', sans-serif; font-size: .75rem; letter-spacing: .05em; }
 .main-nav { display: flex; gap: 1.8rem; align-items: center; margin-left: auto; }
 .main-nav a, .nav-icon, .cart-link { font-size: .72rem; text-transform: uppercase; letter-spacing: .1em; transition: color .2s ease; }
 .main-nav a:hover, .main-nav .active, .nav-icon:hover { color: var(--wine-light); }
 .cart-link { display: flex; gap: .55rem; align-items: center; }
-.cart-link span { background: var(--wine); color: white; border-radius: 50%; width: 20px; height: 20px; display: grid; place-items: center; font-size: .65rem; }
 .nav-actions { display: flex; gap: 1rem; align-items: center; }
 .menu-toggle { display: none; border: 0; background: transparent; font-size: 1.4rem; color: var(--wine); }
 .age-gate { position: fixed; z-index: 20; inset: 0; background: rgba(38,24,25,.72); display: grid; place-items: center; padding: 1.5rem; backdrop-filter: blur(8px); }
@@ -102,7 +101,7 @@ em { color: var(--wine-light); font-style: italic; }
 .site-footer { background: var(--wine); color: #f4eade; padding: 5rem 0 1.5rem; }
 .footer-grid { display: grid; grid-template-columns: 1.6fr .7fr 1fr; gap: 6rem; padding-bottom: 5rem; }
 .footer-brand { color: #fff; margin-bottom: 1.5rem; }
-.footer-brand .brand-mark { border-color: #fff; }
+.footer-brand .brand-mark { border: 0; }
 .footer-grid > div:first-child p { max-width: 320px; color: rgba(255,255,255,.66); }
 .footer-grid a:not(.brand), .footer-grid p { display: block; font-size: .84rem; color: rgba(255,255,255,.7); margin-bottom: .7rem; }
 .footer-grid a:hover { color: #fff; }

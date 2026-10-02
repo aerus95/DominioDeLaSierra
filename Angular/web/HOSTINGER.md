@@ -8,9 +8,12 @@ Hostinger usando el ZIP de código fuente preparado en la carpeta `release`.
 - Framework: Angular (detección automática)
 - Node.js: 22.x
 - Instalación: `npm ci`
-- Compilación: `npm run build`
+- Compilación para revisión con datos mock: `npm run build:hostinger`
 - Directorio de salida: `dist`
 - Variables de entorno: ninguna en esta fase
+
+Este release es para revisión: utiliza datos de demostración y no conecta con
+la API local. No procesa pagos ni envía solicitudes de grupos automáticamente.
 
 El archivo `package.json` debe quedar en la raíz del ZIP. No se deben incluir
 `node_modules`, `dist`, `.git` ni otros paquetes de despliegue.
