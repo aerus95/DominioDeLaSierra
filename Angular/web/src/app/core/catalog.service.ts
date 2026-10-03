@@ -17,6 +17,7 @@ interface ProductListItemDto {
   categoryId: string;
   categoryName: string;
   categorySlug: string;
+  primaryImageUrl: string | null;
 }
 
 interface CategoryListItemDto {
@@ -122,9 +123,18 @@ export class CatalogService {
       vintage: '',
       grape: '',
       alcohol: '',
-      image: bottleImage(item),
+      image: item.primaryImageUrl ? this.mediaUrl(item.primaryImageUrl) : bottleImage(item),
       accent: '#8f3541',
       featured: true
     };
+  }
+
+  private mediaUrl(path: string): string {
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+      return path;
+    }
+
+    const base = environment.apiBaseUrl.replace(/\/$/, '');
+    return `${base}${path.startsWith('/') ? path : `/${path}`}`;
   }
 }

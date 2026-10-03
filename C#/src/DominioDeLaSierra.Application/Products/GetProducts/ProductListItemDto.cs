@@ -10,4 +10,5 @@ public sealed record ProductListItemDto(
     decimal VatRate,
     Guid CategoryId,
     string CategoryName,
-    string CategorySlug);
+    string CategorySlug,
+    string? PrimaryImageUrl);

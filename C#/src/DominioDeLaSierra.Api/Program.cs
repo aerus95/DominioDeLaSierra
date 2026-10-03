@@ -1,10 +1,13 @@
 using DominioDeLaSierra.Api.Security;
 using DominioDeLaSierra.Domain;
 using DominioDeLaSierra.Infrastructure;
+using DominioDeLaSierra.Infrastructure.Media;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.StaticFiles;
+using Microsoft.Extensions.FileProviders;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -106,6 +109,25 @@ else
 }
 
 app.UseCors("Frontend");
+
+var mediaRoot = ProductMediaOptions.Resolve(builder.Configuration["Media:RootPath"]);
+Directory.CreateDirectory(mediaRoot);
+var mediaContentTypes = new FileExtensionContentTypeProvider();
+mediaContentTypes.Mappings[".webp"] = "image/webp";
+mediaContentTypes.Mappings.Remove(".svg");
+mediaContentTypes.Mappings.Remove(".svgz");
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(mediaRoot),
+    RequestPath = "/media",
+    ContentTypeProvider = mediaContentTypes,
+    ServeUnknownFileTypes = false,
+    OnPrepareResponse = context =>
+    {
+        context.Context.Response.Headers.XContentTypeOptions = "nosniff";
+    }
+});
+
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapRazorPages();

@@ -1,5 +1,5 @@
 import { Product } from './models';
-import { BASKET_LIP_CENTER, bottleImage } from './product-visual';
+import { BASKET_LIP_CENTER } from './product-visual';
 
 let sequence = 0;
 let cancelFlight: (() => void) | undefined;
@@ -28,7 +28,7 @@ export async function animateBottleToCart(event: MouseEvent, product: Product): 
   const basket = document.querySelector<HTMLElement>('.harvest-basket');
   if (!source || !basket) return;
   const flyer = new Image();
-  flyer.src = bottleImage(product);
+  flyer.src = product.image;
   flyer.alt = '';
   flyer.setAttribute('aria-hidden', 'true');
   await flyer.decode().catch(() => undefined);

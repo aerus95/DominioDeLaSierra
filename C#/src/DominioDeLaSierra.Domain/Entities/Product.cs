@@ -56,4 +56,58 @@ public sealed class Product
         CreatedAt = createdAt;
         UpdatedAt = updatedAt;
     }
+
+    public void SetPrimaryImageUrl(string url, DateTimeOffset updatedAt)
+    {
+        if (!IsManagedPrimaryImageUrl(url))
+        {
+            throw new ArgumentException("La ruta de la imagen no es válida.", nameof(url));
+        }
+
+        PrimaryImageUrl = url;
+        UpdatedAt = updatedAt;
+    }
+
+    public void ClearPrimaryImageUrl(DateTimeOffset updatedAt)
+    {
+        PrimaryImageUrl = null;
+        UpdatedAt = updatedAt;
+    }
+
+    public static bool IsManagedPrimaryImageUrl(string? url)
+    {
+        const string prefix = "/media/products/";
+        if (string.IsNullOrEmpty(url) || !url.StartsWith(prefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var fileName = url[prefix.Length..];
+        if (fileName.Contains('/') || fileName.Contains('\\'))
+        {
+            return false;
+        }
+
+        var separator = fileName.IndexOf('.');
+        if (separator != 32 || separator != fileName.LastIndexOf('.'))
+        {
+            return false;
+        }
+
+        var extension = fileName[(separator + 1)..];
+        if (extension is not ("jpg" or "png" or "webp"))
+        {
+            return false;
+        }
+
+        foreach (var character in fileName.AsSpan(0, separator))
+        {
+            if (character is not (>= '0' and <= '9' or >= 'a' and <= 'f'))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
 }

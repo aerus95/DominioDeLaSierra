@@ -60,7 +60,8 @@ public sealed class ProductCatalogQueries(ApplicationDbContext dbContext) : IPro
                 product.VatRate,
                 product.CategoryId,
                 product.Category.Name,
-                product.Category.Slug))
+                product.Category.Slug,
+                product.PrimaryImageUrl))
             .ToListAsync(cancellationToken);
 
         return new PagedResult<ProductListItemDto>(
@@ -90,7 +91,8 @@ public sealed class ProductCatalogQueries(ApplicationDbContext dbContext) : IPro
                 product.VatRate,
                 product.CategoryId,
                 product.Category.Name,
-                product.Category.Slug))
+                product.Category.Slug,
+                product.PrimaryImageUrl))
             .FirstOrDefaultAsync(cancellationToken);
     }
 }

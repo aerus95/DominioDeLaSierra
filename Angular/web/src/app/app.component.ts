@@ -2,7 +2,7 @@ import { AfterViewInit, Component, OnDestroy, computed, signal } from '@angular/
 import { DecimalPipe } from '@angular/common';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { filter, Subscription } from 'rxjs';
-import { basketProducts, bottleImage } from './core/product-visual';
+import { basketProducts } from './core/product-visual';
 import { CartService } from './core/cart.service';
 import { environment } from '../environments/environment';
 import { CookieConsentService } from './core/cookie-consent.service';
@@ -43,7 +43,7 @@ import { CartFeedbackComponent } from './shared/cart-feedback.component';
           <a routerLink="/historia" routerLinkActive="active" (click)="menuOpen.set(false)">Nuestra historia</a>
           <a routerLink="/contacto" routerLinkActive="active" (click)="menuOpen.set(false)">Contacto</a>
         </nav>
-        <div class="nav-actions"><a routerLink="/contacto" class="nav-icon" aria-label="Contacto">↗</a><div class="cart-nav"><a routerLink="/carrito" routerLinkActive="active" class="cart-link" [attr.aria-label]="'Ver cesta: ' + cart.itemCount() + ' productos'"><span class="cart-label">Carrito</span><ds-harvest-basket [products]="visibleCartBottles()" [count]="cart.itemCount()" /></a><div class="cart-preview"><div class="cart-preview-head"><span>Tu cesta</span><strong>{{ cart.itemCount() }} {{ cart.itemCount() === 1 ? 'producto' : 'productos' }}</strong></div>@if (cart.items().length) { <div class="cart-preview-products">@for (item of cart.items(); track item.product.id) { <div><img [src]="bottleImage(item.product)" [alt]="item.product.name"><span><strong>{{ item.product.name }}</strong><small>{{ item.quantity }} × {{ item.product.price | number:'1.2-2' }} €</small></span></div> }</div><div class="shipping-meter"><span>@if (shippingRemaining() > 0) { Te faltan {{ shippingRemaining() | number:'1.2-2' }} € para el envío gratuito } @else { Ya tienes envío gratuito }</span><i><b [style.width.%]="shippingProgress()"></b></i></div><div class="cart-preview-total"><span>Subtotal</span><strong>{{ cart.subtotal() | number:'1.2-2' }} €</strong></div><div class="cart-preview-actions"><a routerLink="/carrito">Ver cesta</a><a routerLink="/carrito" [queryParams]="{ paso: 'datos' }">Finalizar compra</a></div> } @else { <div class="cart-preview-empty"><span>Tu primera botella empieza aquí.</span><a routerLink="/vinos">Descubrir los vinos ↗</a></div> }</div></div></div>
+        <div class="nav-actions"><a routerLink="/contacto" class="nav-icon" aria-label="Contacto">↗</a><div class="cart-nav"><a routerLink="/carrito" routerLinkActive="active" class="cart-link" [attr.aria-label]="'Ver cesta: ' + cart.itemCount() + ' productos'"><span class="cart-label">Carrito</span><ds-harvest-basket [products]="visibleCartBottles()" [count]="cart.itemCount()" /></a><div class="cart-preview"><div class="cart-preview-head"><span>Tu cesta</span><strong>{{ cart.itemCount() }} {{ cart.itemCount() === 1 ? 'producto' : 'productos' }}</strong></div>@if (cart.items().length) { <div class="cart-preview-products">@for (item of cart.items(); track item.product.id) { <div><img [src]="item.product.image" [alt]="item.product.name"><span><strong>{{ item.product.name }}</strong><small>{{ item.quantity }} × {{ item.product.price | number:'1.2-2' }} €</small></span></div> }</div><div class="shipping-meter"><span>@if (shippingRemaining() > 0) { Te faltan {{ shippingRemaining() | number:'1.2-2' }} € para el envío gratuito } @else { Ya tienes envío gratuito }</span><i><b [style.width.%]="shippingProgress()"></b></i></div><div class="cart-preview-total"><span>Subtotal</span><strong>{{ cart.subtotal() | number:'1.2-2' }} €</strong></div><div class="cart-preview-actions"><a routerLink="/carrito">Ver cesta</a><a routerLink="/carrito" [queryParams]="{ paso: 'datos' }">Finalizar compra</a></div> } @else { <div class="cart-preview-empty"><span>Tu primera botella empieza aquí.</span><a routerLink="/vinos">Descubrir los vinos ↗</a></div> }</div></div></div>
       </div>
     </header>
     <main id="contenido" [attr.inert]="showAgeGate() && !isManagementRoute() ? '' : null"><router-outlet /></main>
@@ -66,7 +66,6 @@ export class AppComponent implements AfterViewInit, OnDestroy {
   readonly ageDenied = signal(false);
   readonly showAgeGate = signal(this.readAgeGate());
   readonly isManagementRoute = signal(false);
-  readonly bottleImage = bottleImage;
   readonly visibleCartBottles = computed(() => basketProducts(this.cart.items()));
   readonly shippingRemaining = computed(() => Math.max(0, 60 - this.cart.subtotal()));
   readonly shippingProgress = computed(() => Math.min(100, this.cart.subtotal() / 60 * 100));

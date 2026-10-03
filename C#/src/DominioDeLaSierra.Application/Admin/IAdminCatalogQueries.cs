@@ -1,3 +1,5 @@
+using DominioDeLaSierra.Domain;
+
 namespace DominioDeLaSierra.Application.Admin;
 
 public sealed record AdminCategoryDto(
@@ -20,7 +22,9 @@ public sealed record AdminProductDto(
     DateTimeOffset UpdatedAt,
     Guid CategoryId,
     string CategoryName,
-    string CategorySlug);
+    string CategorySlug,
+    string? PrimaryImageUrl,
+    ProductKind Kind);
 
 public interface IAdminCatalogQueries
 {

@@ -42,6 +42,34 @@
         .off { background: #f8e8e9; color: var(--err); }
         code { font-size: 12px; }
         .muted { color: #756c65; font-size: 13px; margin-top: 0; }
+        .section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+        .section-head h2 { margin: 0; }
+        .section-head button { padding: 8px 14px; font-size: 13px; }
+        .image-cell { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .thumb-frame { width: 64px; height: 64px; border-radius: 8px; background: #eee8df; }
+        .thumb-button { display: block; width: 64px; height: 64px; padding: 0; border: 0; border-radius: 8px; background: #eee8df; cursor: pointer; }
+        .thumb { display: block; width: 64px; height: 64px; object-fit: contain; object-position: center; border-radius: 8px; background: #eee8df; }
+        .thumb-empty { display: grid; place-items: center; color: #756c65; font-size: 10px; line-height: 1.15; font-weight: 600; text-align: center; padding: 4px; }
+        .image-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 0; }
+        .image-actions form { margin: 0; }
+        .image-actions button { padding: 4px 8px; font-size: 11px; white-space: nowrap; }
+        .image-actions .danger { background: transparent; color: var(--err); border: 1px solid var(--err); }
+        .js-image-form { height: 0; margin: 0; overflow: hidden; }
+        .image-file { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); border: 0; }
+        .modal[hidden] { display: none !important; }
+        .modal { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; padding: 24px; background: rgba(22, 12, 16, .72); }
+        .modal-card { width: min(920px, 100%); background: #fff; border-radius: 14px; padding: 18px; }
+        .modal-card.compact { width: min(640px, 100%); }
+        .import-file-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 8px 0 4px; }
+        .import-result h3 { margin: 12px 0 0; font-size: 14px; }
+        .import-result ul { margin: 4px 0 0; padding-left: 18px; max-height: 36vh; overflow: auto; }
+        .ok-text { color: var(--ok); font-weight: 700; margin: 0; }
+        .err-text { color: var(--err); font-weight: 700; margin: 0; }
+        .modal-card img { display: block; width: 100%; max-height: 70vh; object-fit: contain; object-position: center; background: #eee8df; border-radius: 8px; }
+        .modal-bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
+        .modal-bar strong { color: var(--wine); }
+        .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+        .modal-actions .quiet { background: transparent; color: var(--ink); border: 1px solid var(--line); }
     </style>
 </head>
 <body>
@@ -153,10 +181,16 @@
         </section>
 
         <section class="card">
-            <h2>Productos (@Model.Products.Count)</h2>
+            <div class="section-head">
+                <h2>Productos (@Model.Products.Count)</h2>
+                @if (Model.CanWrite)
+                {
+                    <button type="button" id="open-import">Importar productos</button>
+                }
+            </div>
             <table>
                 <thead>
-                    <tr><th>Referencia</th><th>Nombre</th><th>Categoría</th><th>Precio</th><th>IVA</th><th>Estado</th><th>Actualizado</th></tr>
+                    <tr><th>Referencia</th><th>Nombre</th><th>Tipo</th><th>Categoría</th><th>Precio</th><th>IVA</th><th>Estado</th><th>Actualizado</th><th>Imagen</th></tr>
                 </thead>
                 <tbody>
                 @foreach (var product in Model.Products)
@@ -164,16 +198,307 @@
                     <tr>
                         <td><code>@product.Reference</code></td>
                         <td>@product.Name<br /><code>@product.Slug</code></td>
+                        <td>@IndexModel.KindLabel(product.Kind)</td>
                         <td>@product.CategoryName</td>
                         <td>@product.Price.ToString("N2") €</td>
                         <td>@product.VatRate.ToString("N2") %</td>
                         <td><span class="badge @(product.Active ? "on" : "off")">@(product.Active ? "Activo" : "Inactivo")</span></td>
                         <td>@product.UpdatedAt.ToLocalTime().ToString("g")</td>
+                        <td>
+                            @{
+                                var hasImage = !string.IsNullOrWhiteSpace(product.PrimaryImageUrl);
+                            }
+                            <div class="image-cell">
+                                @if (hasImage)
+                                {
+                                    <button type="button" class="thumb-button" data-open-lightbox data-full="@product.PrimaryImageUrl" data-alt="@product.Name">
+                                        <img class="thumb" src="@product.PrimaryImageUrl" alt="" width="64" height="64" />
+                                    </button>
+                                }
+                                else
+                                {
+                                    <div class="thumb-frame thumb-empty">Sin imagen</div>
+                                }
+                                @if (Model.CanWrite)
+                                {
+                                    <div class="image-actions">
+                                        <button type="button" class="js-pick-image" data-form="image-form-@product.Id" title="@(hasImage ? "Cambiar imagen" : "Subir imagen")" aria-label="@(hasImage ? "Cambiar imagen" : "Subir imagen")">@(hasImage ? "Cambiar" : "Subir")</button>
+                                        @if (hasImage)
+                                        {
+                                            <form method="post" asp-page-handler="DeletePrimaryImage" onsubmit="return confirm('¿Eliminar la imagen de este producto?');">
+                                                <input type="hidden" name="imageProductId" value="@product.Id" />
+                                                <button class="danger" type="submit" title="Eliminar imagen" aria-label="Eliminar imagen">Eliminar</button>
+                                            </form>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                            @if (Model.CanWrite)
+                            {
+                                <form id="image-form-@product.Id" class="js-image-form" method="post" asp-page-handler="SetPrimaryImage" enctype="multipart/form-data">
+                                    <input type="hidden" name="imageProductId" value="@product.Id" />
+                                    <input class="image-file" type="file" name="primaryImage" accept="image/jpeg,image/png,image/webp" />
+                                </form>
+                            }
+                        </td>
                     </tr>
                 }
                 </tbody>
             </table>
         </section>
     </div>
+    <div id="image-lightbox" class="modal" hidden>
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="image-lightbox-title">
+            <div class="modal-bar">
+                <strong id="image-lightbox-title">Imagen del producto</strong>
+                <button type="button" data-close-lightbox aria-label="Cerrar">×</button>
+            </div>
+            <img id="image-lightbox-img" alt="" />
+            <div class="modal-actions">
+                <button type="button" class="quiet" data-close-lightbox>Cerrar</button>
+            </div>
+        </div>
+    </div>
+    <div id="image-preview" class="modal" hidden>
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="image-preview-title">
+            <div class="modal-bar">
+                <strong id="image-preview-title">Previsualización</strong>
+                <button type="button" data-close-preview aria-label="Cancelar">×</button>
+            </div>
+            <img id="image-preview-img" alt="Imagen seleccionada" />
+            <div class="modal-actions">
+                <button type="button" class="quiet" data-close-preview>Cancelar</button>
+                <button type="button" id="image-preview-save">Guardar imagen</button>
+            </div>
+        </div>
+    </div>
+    @if (Model.CanWrite)
+    {
+        <div id="import-modal" class="modal" hidden>
+            <div class="modal-card compact" role="dialog" aria-modal="true" aria-labelledby="import-title">
+                <div class="modal-bar">
+                    <strong id="import-title">Importar productos desde JSON</strong>
+                    <button type="button" data-close-import aria-label="Cerrar">×</button>
+                </div>
+                <p class="muted">Selecciona el fichero, valídalo y, si es correcto, impórtalo. La validación no crea productos.</p>
+                <form id="import-form" method="post" asp-page-handler="ImportProducts" enctype="multipart/form-data" data-validate-url="@Url.Page(null, pageHandler: "ValidateProductImport")">
+                    <div class="import-file-row">
+                        <button type="button" id="import-pick">Seleccionar archivo</button>
+                        <span id="import-file-name" class="muted">Ningún archivo seleccionado</span>
+                    </div>
+                    <input id="import-file" class="image-file" type="file" name="importFile" />
+                    <div id="import-result" class="import-result"></div>
+                    <div class="modal-actions">
+                        <button type="button" class="quiet" data-close-import>Cerrar</button>
+                        <button type="button" id="import-validate">Validar</button>
+                        <button type="button" id="import-confirm" hidden>Importar productos</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    }
+    <script>
+        (function () {
+            const lightbox = document.getElementById('image-lightbox');
+            const lightboxImg = document.getElementById('image-lightbox-img');
+            const preview = document.getElementById('image-preview');
+            const previewImg = document.getElementById('image-preview-img');
+            let previewForm = null;
+            let previewInput = null;
+
+            document.querySelectorAll('[data-open-lightbox]').forEach(function (button) {
+                button.addEventListener('click', function () {
+                    lightboxImg.src = button.getAttribute('data-full');
+                    lightboxImg.alt = button.getAttribute('data-alt') || '';
+                    lightbox.hidden = false;
+                });
+            });
+
+            document.querySelectorAll('.js-pick-image').forEach(function (button) {
+                button.addEventListener('click', function () {
+                    const form = document.getElementById(button.getAttribute('data-form'));
+                    const input = form && form.querySelector('input[type="file"]');
+                    if (input) input.click();
+                });
+            });
+
+            document.querySelectorAll('.js-image-form input[type="file"]').forEach(function (input) {
+                input.addEventListener('change', function () {
+                    const file = input.files && input.files[0];
+                    if (!file) return;
+                    previewForm = input.form;
+                    previewInput = input;
+                    const reader = new FileReader();
+                    reader.onload = function () {
+                        previewImg.src = reader.result;
+                        preview.hidden = false;
+                    };
+                    reader.readAsDataURL(file);
+                });
+            });
+
+            document.getElementById('image-preview-save').addEventListener('click', function () {
+                if (previewForm) previewForm.submit();
+            });
+
+            function closePreview() {
+                if (previewInput) previewInput.value = '';
+                previewImg.removeAttribute('src');
+                preview.hidden = true;
+                previewForm = null;
+                previewInput = null;
+            }
+
+            function closeLightbox() {
+                lightbox.hidden = true;
+                lightboxImg.removeAttribute('src');
+            }
+
+            document.querySelectorAll('[data-close-lightbox]').forEach(function (element) {
+                element.addEventListener('click', closeLightbox);
+            });
+            document.querySelectorAll('[data-close-preview]').forEach(function (element) {
+                element.addEventListener('click', closePreview);
+            });
+            lightbox.addEventListener('click', function (event) {
+                if (event.target === lightbox) closeLightbox();
+            });
+            preview.addEventListener('click', function (event) {
+                if (event.target === preview) closePreview();
+            });
+            const importModal = document.getElementById('import-modal');
+            function closeImport() {
+                if (importModal) importModal.hidden = true;
+            }
+
+            document.addEventListener('keydown', function (event) {
+                if (event.key !== 'Escape') return;
+                if (!preview.hidden) { closePreview(); return; }
+                if (importModal && !importModal.hidden) { closeImport(); return; }
+                if (!lightbox.hidden) closeLightbox();
+            });
+
+            if (importModal) {
+                const importForm = document.getElementById('import-form');
+                const importInput = document.getElementById('import-file');
+                const importName = document.getElementById('import-file-name');
+                const importResult = document.getElementById('import-result');
+                const importConfirm = document.getElementById('import-confirm');
+                const importValidate = document.getElementById('import-validate');
+                let importBusy = false;
+
+                document.getElementById('open-import').addEventListener('click', function () {
+                    importModal.hidden = false;
+                });
+                document.getElementById('import-pick').addEventListener('click', function () {
+                    importInput.click();
+                });
+                document.querySelectorAll('[data-close-import]').forEach(function (element) {
+                    element.addEventListener('click', closeImport);
+                });
+                importModal.addEventListener('click', function (event) {
+                    if (event.target === importModal) closeImport();
+                });
+                importForm.addEventListener('submit', function (event) {
+                    event.preventDefault();
+                });
+                importInput.addEventListener('change', function () {
+                    const file = importInput.files && importInput.files[0];
+                    importName.textContent = file ? file.name : 'Ningún archivo seleccionado';
+                    importResult.replaceChildren();
+                    importConfirm.hidden = true;
+                });
+                importValidate.addEventListener('click', function () {
+                    postImport(importForm.getAttribute('data-validate-url'), false);
+                });
+                importConfirm.addEventListener('click', function () {
+                    if (!confirm('¿Importar los productos de este fichero?')) return;
+                    postImport(importForm.action, true);
+                });
+
+                function postImport(url, importing) {
+                    const file = importInput.files && importInput.files[0];
+                    if (!file || importBusy) {
+                        if (!file) showReport({ isValid: false, imported: false, documentErrors: ['Selecciona un archivo JSON.'], products: [] });
+                        return;
+                    }
+                    importBusy = true;
+                    importValidate.disabled = true;
+                    importConfirm.disabled = true;
+                    const token = importForm.querySelector('input[name="__RequestVerificationToken"]').value;
+                    const body = new FormData();
+                    body.append('__RequestVerificationToken', token);
+                    body.append('importFile', file);
+                    fetch(url, { method: 'POST', body: body, credentials: 'same-origin' })
+                        .then(function (response) {
+                            return response.json().then(function (report) { return report; });
+                        })
+                        .then(function (report) {
+                            if (report && report.imported) {
+                                window.location.assign(window.location.pathname);
+                                return;
+                            }
+                            showReport(report || { isValid: false, documentErrors: ['No se ha podido leer la respuesta.'], products: [] });
+                        })
+                        .catch(function () {
+                            showReport({ isValid: false, imported: false, documentErrors: ['No se ha podido enviar el fichero.'], products: [] });
+                        })
+                        .finally(function () {
+                            importBusy = false;
+                            importValidate.disabled = false;
+                            importConfirm.disabled = false;
+                        });
+                }
+
+                function showReport(report) {
+                    importResult.replaceChildren();
+                    importConfirm.hidden = true;
+                    const title = document.createElement('p');
+                    title.className = report.isValid ? 'ok-text' : 'err-text';
+                    title.textContent = report.isValid ? '✓ JSON válido' : '✗ No se puede importar';
+                    importResult.appendChild(title);
+                    if (report.isValid && report.counts) {
+                        const list = document.createElement('ul');
+                        [
+                            countLine(report.counts.total, 'producto', 'productos'),
+                            countLine(report.counts.standard, 'estándar', 'estándar'),
+                            countLine(report.counts.wine, 'vino', 'vinos'),
+                            countLine(report.counts.pack, 'pack', 'packs')
+                        ].forEach(function (text) {
+                            const item = document.createElement('li');
+                            item.textContent = text;
+                            list.appendChild(item);
+                        });
+                        importResult.appendChild(list);
+                        importConfirm.hidden = false;
+                    }
+                    appendMessages(null, report.documentErrors || []);
+                    (report.products || []).forEach(function (group) {
+                        appendMessages(group.label, group.messages || []);
+                    });
+                }
+
+                function appendMessages(label, messages) {
+                    if (!messages.length) return;
+                    if (label) {
+                        const heading = document.createElement('h3');
+                        heading.textContent = label;
+                        importResult.appendChild(heading);
+                    }
+                    const list = document.createElement('ul');
+                    messages.forEach(function (message) {
+                        const item = document.createElement('li');
+                        item.textContent = message;
+                        list.appendChild(item);
+                    });
+                    importResult.appendChild(list);
+                }
+
+                function countLine(value, singular, plural) {
+                    return value + ' ' + (value === 1 ? singular : plural);
+                }
+            }
+        })();
+    </script>
 </body>
 </html>

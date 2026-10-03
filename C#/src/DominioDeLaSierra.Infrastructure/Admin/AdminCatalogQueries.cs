@@ -41,7 +41,9 @@ public sealed class AdminCatalogQueries(ApplicationDbContext dbContext) : IAdmin
                 product.UpdatedAt,
                 product.CategoryId,
                 product.Category.Name,
-                product.Category.Slug))
+                product.Category.Slug,
+                product.PrimaryImageUrl,
+                product.Kind))
             .ToListAsync(cancellationToken);
     }
 }

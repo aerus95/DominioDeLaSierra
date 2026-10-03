@@ -1,7 +1,7 @@
 import { Component, computed, inject, input } from '@angular/core';
 import { CartFeedbackService } from '../core/cart-feedback.service';
 import { Product } from '../core/models';
-import { BASKET_FRONT_CLIP, basketLayout, bottleImage } from '../core/product-visual';
+import { BASKET_FRONT_CLIP, basketLayout } from '../core/product-visual';
 
 @Component({ selector: 'ds-harvest-basket', standalone: true, template: `
   <span class="harvest-basket" [class.is-sparse]="products().length > 0 && products().length <= 2" [class.is-full]="count() >= 6" aria-hidden="true">
@@ -9,7 +9,7 @@ import { BASKET_FRONT_CLIP, basketLayout, bottleImage } from '../core/product-vi
     <span class="harvest-bottles">
       @for (product of products(); track $index; let index = $index) {
         <span class="harvest-slot" [class.is-receiving]="receivingIndex() === index" [attr.data-product-id]="product.id" [style.left.%]="slots()[index].x" [style.height.px]="slots()[index].height" [style.--tilt]="slots()[index].tilt + 'deg'">
-          <img [src]="bottleImage(product)" alt="" width="320" height="960">
+          <img [src]="product.image" alt="" width="320" height="960">
         </span>
       }
     </span>
@@ -38,5 +38,4 @@ export class HarvestBasketComponent {
   readonly frontClip = BASKET_FRONT_CLIP;
   readonly slots = computed(() => basketLayout(this.products().length));
   readonly receivingIndex = computed(() => this.products().map(product => product.id).lastIndexOf(this.feedback.pendingProduct()?.id ?? ''));
-  readonly bottleImage = bottleImage;
 }
