@@ -130,7 +130,7 @@
                                 </form>
                                 <form method="post" asp-page-handler="SetActive">
                                     <input type="hidden" name="UserId" value="@user.Id" />
-                                    <input type="hidden" name="Active" value="@(!user.Active)" />
+                                    <input type="hidden" name="Active" value="@(user.Active ? "false" : "true")" />
                                     <button type="submit">@(user.Active ? "Desactivar" : "Activar")</button>
                                 </form>
                                 <form method="post" asp-page-handler="ChangePassword">
