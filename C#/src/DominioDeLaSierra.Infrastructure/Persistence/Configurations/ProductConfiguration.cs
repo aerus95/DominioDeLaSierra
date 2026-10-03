@@ -1,3 +1,4 @@
+using DominioDeLaSierra.Domain;
 using DominioDeLaSierra.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -50,6 +51,17 @@ public sealed class ProductConfiguration : IEntityTypeConfiguration<Product>
         builder.Property(product => product.Active)
             .HasColumnType("boolean")
             .IsRequired();
+
+        builder.Property(product => product.Kind)
+            .HasColumnType("character varying(32)")
+            .HasMaxLength(32)
+            .HasConversion<string>()
+            .HasDefaultValue(ProductKind.Standard)
+            .IsRequired();
+
+        builder.Property(product => product.PrimaryImageUrl)
+            .HasColumnType("character varying(500)")
+            .HasMaxLength(500);
 
         builder.Property(product => product.CreatedAt)
             .HasColumnType("timestamp with time zone")
