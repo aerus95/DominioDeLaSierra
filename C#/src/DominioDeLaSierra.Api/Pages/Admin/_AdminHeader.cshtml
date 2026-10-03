@@ -1,0 +1,40 @@
+@using System.Security.Claims
+@{
+    var username = User.FindFirst(ClaimTypes.Name)?.Value?.Trim();
+    var givenName = User.FindFirst(ClaimTypes.GivenName)?.Value?.Trim();
+    var displayName = string.IsNullOrWhiteSpace(givenName) ? username : givenName;
+    var role = User.FindFirst(ClaimTypes.Role)?.Value?.Trim();
+    var meta = string.IsNullOrWhiteSpace(username)
+        ? role
+        : string.IsNullOrWhiteSpace(role)
+            ? "@" + username
+            : "@" + username + " · " + role;
+}
+<style>
+    .admin-session { display: flex; justify-content: space-between; align-items: center; gap: 16px; background: #2d1519; color: #faf7f1; padding: 14px 32px 10px; }
+    .admin-session strong { display: block; font-size: 16px; font-weight: 650; }
+    .admin-session .meta { display: block; margin-top: 2px; color: #e8d7b8; font-size: 13px; }
+    .admin-session form { margin: 0; }
+    .admin-session button { background: transparent; color: #faf7f1; border: 1px solid rgba(232,215,184,.45); border-radius: 999px; padding: 8px 14px; font: 600 13px inherit; cursor: pointer; }
+    nav.admin-nav { padding: 4px 32px 12px; background: #2d1519; }
+    nav.admin-nav a { color: #e8d7b8; margin-right: 18px; text-decoration: none; font-size: 13px; }
+</style>
+<div class="admin-session">
+    <div>
+        <strong>@displayName</strong>
+        <span class="meta">@meta</span>
+    </div>
+    <form method="post" asp-page="/Admin/Login" asp-page-handler="Logout">
+        <button type="submit">Cerrar sesión</button>
+    </form>
+</div>
+<nav class="admin-nav">
+    <a href="/admin">Panel</a>
+    @if (User.IsInRole("Administrator"))
+    {
+        <a href="/admin/users">Usuarios</a>
+    }
+    <a href="/swagger">Swagger</a>
+    <a href="/api/v1/products">GET /api/v1/products</a>
+    <a href="/api/v1/categories">GET /api/v1/categories</a>
+</nav>

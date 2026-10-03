@@ -1,6 +1,8 @@
+using DominioDeLaSierra.Api.Security;
 using DominioDeLaSierra.Application.Common;
 using DominioDeLaSierra.Application.Products.CreateProduct;
 using DominioDeLaSierra.Application.Products.GetProducts;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace DominioDeLaSierra.Api.Controllers;
@@ -55,7 +57,7 @@ public sealed class ProductsController(
         }
     }
 
-    // TODO: Proteger este endpoint con autenticación y autorización antes de exponerlo en producción pública.
+    [Authorize(Policy = AdminAuthOptions.WritePolicy)]
     [HttpPost]
     public async Task<ActionResult<CreatedProductDto>> Post(
         [FromBody] CreateProductRequest? request,

@@ -45,17 +45,12 @@
     </style>
 </head>
 <body>
+    <partial name="~/Pages/Admin/_AdminHeader.cshtml" />
     <header>
-        <p>Dominio de la Sierra · Development</p>
+        <p>Dominio de la Sierra · Administración</p>
         <h1>Panel de catálogo</h1>
-        <small>Lee y escribe en PostgreSQL. No sustituye al SaaS interno. Solo está mapeado en Development.</small>
+        <small>Lee el catálogo en PostgreSQL. Solo Administrator y Manager pueden modificarlo.</small>
     </header>
-    <nav>
-        <a href="/admin">Panel</a>
-        <a href="/swagger">Swagger</a>
-        <a href="/api/v1/products">GET /api/v1/products</a>
-        <a href="/api/v1/categories">GET /api/v1/categories</a>
-    </nav>
     <div class="wrap">
         @if (!string.IsNullOrWhiteSpace(Model.StatusMessage))
         {
@@ -66,6 +61,8 @@
             <div class="flash err">@Model.ErrorMessage</div>
         }
 
+        @if (Model.CanWrite)
+        {
         <div class="grid">
             <section class="card">
                 <h2>Nueva categoría</h2>
@@ -129,6 +126,11 @@
                 </form>
             </section>
         </div>
+        }
+        else
+        {
+            <p class="muted">Tu rol permite consultar el catálogo, no modificarlo.</p>
+        }
 
         <section class="card" style="margin-bottom:22px">
             <h2>Categorías (@Model.Categories.Count)</h2>

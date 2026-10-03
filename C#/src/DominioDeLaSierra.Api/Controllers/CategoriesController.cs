@@ -1,5 +1,7 @@
+using DominioDeLaSierra.Api.Security;
 using DominioDeLaSierra.Application.Categories.CreateCategory;
 using DominioDeLaSierra.Application.Categories.GetCategories;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace DominioDeLaSierra.Api.Controllers;
@@ -18,7 +20,7 @@ public sealed class CategoriesController(
         return Ok(categories);
     }
 
-    // TODO: Proteger este endpoint con autenticación y autorización antes de exponerlo en producción pública.
+    [Authorize(Policy = AdminAuthOptions.WritePolicy)]
     [HttpPost]
     public async Task<ActionResult<CreatedCategoryDto>> Post(
         [FromBody] CreateCategoryRequest? request,

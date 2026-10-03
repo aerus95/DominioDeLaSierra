@@ -25,6 +25,8 @@ public static class DependencyInjection
         services.AddScoped<IProductCatalogQueries, ProductCatalogQueries>();
         services.AddScoped<ICategoryCatalogQueries, CategoryCatalogQueries>();
         services.AddScoped<IAdminCatalogQueries, AdminCatalogQueries>();
+        services.AddScoped<IAdminUserAuthentication, AdminUserAuthentication>();
+        services.AddScoped<IAdminUserManagement, AdminUserManagement>();
         services.AddScoped<ICreateCategory, CreateCategoryService>();
         services.AddScoped<ICreateProduct, CreateProductService>();
 

@@ -1,17 +1,20 @@
 using System.Globalization;
+using DominioDeLaSierra.Api.Security;
+using DominioDeLaSierra.Domain;
 using DominioDeLaSierra.Application.Admin;
 using DominioDeLaSierra.Application.Categories.CreateCategory;
 using DominioDeLaSierra.Application.Products.CreateProduct;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 
 namespace DominioDeLaSierra.Api.Pages.Admin;
 
+[Authorize(Policy = AdminAuthOptions.PanelPolicy)]
 public sealed class IndexModel(
     IAdminCatalogQueries adminCatalogQueries,
     ICreateCategory createCategory,
-    ICreateProduct createProduct,
-    IHostEnvironment environment) : PageModel
+    ICreateProduct createProduct) : PageModel
 {
     public IReadOnlyList<AdminCategoryDto> Categories { get; private set; } = [];
     public IReadOnlyList<AdminProductDto> Products { get; private set; } = [];
@@ -28,22 +31,21 @@ public sealed class IndexModel(
     [TempData]
     public string? ErrorMessage { get; set; }
 
+    public bool CanWrite =>
+        User.IsInRole(nameof(AdminRole.Administrator)) || User.IsInRole(nameof(AdminRole.Manager));
+
     public async Task<IActionResult> OnGetAsync(CancellationToken cancellationToken)
     {
-        if (!environment.IsDevelopment())
-        {
-            return NotFound();
-        }
-
         await LoadAsync(cancellationToken);
         return Page();
     }
 
     public async Task<IActionResult> OnPostCreateCategoryAsync(CancellationToken cancellationToken)
     {
-        if (!environment.IsDevelopment())
+        if (!CanWrite)
         {
-            return NotFound();
+            ErrorMessage = "No tienes permiso para modificar el catálogo.";
+            return RedirectToPage();
         }
 
         try
@@ -64,9 +66,10 @@ public sealed class IndexModel(
 
     public async Task<IActionResult> OnPostCreateProductAsync(CancellationToken cancellationToken)
     {
-        if (!environment.IsDevelopment())
+        if (!CanWrite)
         {
-            return NotFound();
+            ErrorMessage = "No tienes permiso para modificar el catálogo.";
+            return RedirectToPage();
         }
 
         try

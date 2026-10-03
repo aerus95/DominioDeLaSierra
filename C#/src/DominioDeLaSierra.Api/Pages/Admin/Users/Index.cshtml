@@ -1,0 +1,150 @@
+@page "/admin/users"
+@using DominioDeLaSierra.Domain
+@model DominioDeLaSierra.Api.Pages.Admin.Users.UsersModel
+@{
+    ViewData["Title"] = "Usuarios administrativos";
+}
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Usuarios administrativos · Dominio de la Sierra</title>
+    <style>
+        :root { --wine:#421f25; --ink:#1d1917; --paper:#faf8f4; --cream:#f2ede4; --gold:#bd9560; --line:rgba(29,25,23,.14); --ok:#2f6b4f; --err:#8b2e35; }
+        * { box-sizing: border-box; }
+        body { margin: 0; background: var(--paper); color: var(--ink); font: 15px/1.5 Calibri, Segoe UI, sans-serif; }
+        header { background: var(--wine); color: #faf7f1; padding: 28px 32px; }
+        header p { margin: 0 0 6px; letter-spacing: .18em; text-transform: uppercase; font-size: 11px; color: var(--gold); }
+        header h1 { margin: 0; font-weight: 500; font-size: 28px; }
+        header small { display: block; margin-top: 8px; opacity: .75; }
+        nav { padding: 12px 32px; background: #2d1519; }
+        nav a { color: #e8d7b8; margin-right: 18px; text-decoration: none; font-size: 13px; }
+        .wrap { padding: 28px 32px 48px; }
+        .flash { padding: 12px 14px; border-radius: 8px; margin-bottom: 18px; }
+        .flash.ok { background: #e7f3ea; color: var(--ok); }
+        .flash.err { background: #f8e8e9; color: var(--err); }
+        section.card { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 20px; margin-bottom: 22px; }
+        h2 { margin: 0 0 14px; font-size: 18px; color: var(--wine); }
+        label { display: block; font-size: 12px; font-weight: 600; margin: 10px 0 4px; }
+        input, select { width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; font: inherit; background: var(--cream); }
+        .row { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr auto; gap: 12px; align-items: end; }
+        @@media (max-width: 980px) { .row { grid-template-columns: 1fr; } }
+        button { background: var(--wine); color: #fff; border: 0; border-radius: 999px; padding: 10px 18px; font: 600 14px inherit; cursor: pointer; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+        th { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: #6d6560; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; }
+        .on { background: #e7f3ea; color: var(--ok); }
+        .off { background: #f8e8e9; color: var(--err); }
+        .ops { display: flex; flex-direction: column; gap: 8px; min-width: 220px; }
+        .ops form { display: flex; gap: 6px; align-items: center; }
+        .ops input, .ops select { width: auto; min-width: 0; flex: 1; padding: 6px 8px; }
+        .ops button { padding: 6px 12px; font-size: 12px; white-space: nowrap; }
+        .muted { color: #756c65; font-size: 13px; margin-top: 0; }
+    </style>
+</head>
+<body>
+    <partial name="~/Pages/Admin/_AdminHeader.cshtml" />
+    <header>
+        <p>Dominio de la Sierra · Administración</p>
+        <h1>Usuarios administrativos</h1>
+        <small>Solo un Administrator puede crear cuentas, cambiar roles, activarlas o restablecer contraseñas.</small>
+    </header>
+    <div class="wrap">
+        @if (!string.IsNullOrWhiteSpace(Model.StatusMessage))
+        {
+            <div class="flash ok">@Model.StatusMessage</div>
+        }
+        @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+        {
+            <div class="flash err">@Model.ErrorMessage</div>
+        }
+
+        <section class="card">
+            <h2>Nuevo usuario</h2>
+            <p class="muted">La cuenta queda activa. La contraseña no se guarda en claro.</p>
+            <form method="post" asp-page-handler="Create">
+                <div class="row">
+                    <div>
+                        <label asp-for="CreateInput.Username">Username</label>
+                        <input asp-for="CreateInput.Username" autocomplete="off" maxlength="80" required />
+                    </div>
+                    <div>
+                        <label asp-for="CreateInput.DisplayName">Nombre visible</label>
+                        <input asp-for="CreateInput.DisplayName" autocomplete="off" maxlength="150" required />
+                    </div>
+                    <div>
+                        <label asp-for="CreateInput.Password">Contraseña</label>
+                        <input asp-for="CreateInput.Password" type="password" autocomplete="new-password" required />
+                    </div>
+                    <div>
+                        <label asp-for="CreateInput.Role">Rol</label>
+                        <select asp-for="CreateInput.Role">
+                            <option value="Administrator">Administrator</option>
+                            <option value="Manager">Manager</option>
+                            <option value="Viewer">Viewer</option>
+                        </select>
+                    </div>
+                    <div>
+                        <button type="submit">Crear</button>
+                    </div>
+                </div>
+            </form>
+        </section>
+
+        <section class="card">
+            <h2>Cuentas</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Username</th>
+                        <th>Nombre</th>
+                        <th>Rol</th>
+                        <th>Activo</th>
+                        <th>Creado</th>
+                        <th>Último acceso</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var user in Model.Items)
+                {
+                    <tr>
+                        <td>@user.Username</td>
+                        <td>@user.DisplayName</td>
+                        <td>@user.Role</td>
+                        <td><span class="badge @(user.Active ? "on" : "off")">@(user.Active ? "Sí" : "No")</span></td>
+                        <td>@user.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                        <td>@(user.LastLoginAt is null ? "—" : user.LastLoginAt.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm"))</td>
+                        <td>
+                            <div class="ops">
+                                <form method="post" asp-page-handler="ChangeRole">
+                                    <input type="hidden" name="UserId" value="@user.Id" />
+                                    <select name="Role">
+                                        <option value="Administrator" selected="@(user.Role == AdminRole.Administrator ? "selected" : null)">Administrator</option>
+                                        <option value="Manager" selected="@(user.Role == AdminRole.Manager ? "selected" : null)">Manager</option>
+                                        <option value="Viewer" selected="@(user.Role == AdminRole.Viewer ? "selected" : null)">Viewer</option>
+                                    </select>
+                                    <button type="submit">Rol</button>
+                                </form>
+                                <form method="post" asp-page-handler="SetActive">
+                                    <input type="hidden" name="UserId" value="@user.Id" />
+                                    <input type="hidden" name="Active" value="@(!user.Active)" />
+                                    <button type="submit">@(user.Active ? "Desactivar" : "Activar")</button>
+                                </form>
+                                <form method="post" asp-page-handler="ChangePassword">
+                                    <input type="hidden" name="UserId" value="@user.Id" />
+                                    <input type="password" name="NewPassword" autocomplete="new-password" placeholder="Nueva contraseña" required />
+                                    <button type="submit">Clave</button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </section>
+    </div>
+</body>
+</html>

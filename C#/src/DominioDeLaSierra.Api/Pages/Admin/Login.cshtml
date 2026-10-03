@@ -1,0 +1,39 @@
+@page "/admin/login"
+@model LoginModel
+@{
+    ViewData["Title"] = "Acceso de administración";
+}
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Acceso · Dominio de la Sierra</title>
+    <style>
+        body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #faf8f4; color: #1d1917; font: 15px/1.5 Calibri, Segoe UI, sans-serif; }
+        form { width: min(420px, calc(100% - 32px)); background: #fff; border: 1px solid rgba(29,25,23,.14); border-radius: 14px; padding: 24px; }
+        p { margin: 0 0 8px; letter-spacing: .18em; text-transform: uppercase; font-size: 11px; color: #bd9560; }
+        h1 { margin: 0 0 18px; font-weight: 500; font-size: 28px; color: #421f25; }
+        label { display: block; font-size: 12px; font-weight: 600; margin: 12px 0 4px; }
+        input { width: 100%; padding: 9px 10px; border: 1px solid rgba(29,25,23,.14); border-radius: 8px; font: inherit; background: #f2ede4; box-sizing: border-box; }
+        button { margin-top: 18px; background: #421f25; color: #fff; border: 0; border-radius: 999px; padding: 10px 18px; font: 600 14px inherit; cursor: pointer; }
+        .err { background: #f8e8e9; color: #8b2e35; padding: 12px 14px; border-radius: 8px; margin-bottom: 12px; }
+    </style>
+</head>
+<body>
+    <form method="post">
+        <p>Dominio de la Sierra</p>
+        <h1>Acceso de administración</h1>
+        @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+        {
+            <div class="err">@Model.ErrorMessage</div>
+        }
+        <label asp-for="Username">Usuario</label>
+        <input asp-for="Username" autocomplete="username" required />
+        <label asp-for="Password">Contraseña</label>
+        <input asp-for="Password" type="password" autocomplete="current-password" required />
+        <input type="hidden" asp-for="ReturnUrl" />
+        <button type="submit">Entrar</button>
+    </form>
+</body>
+</html>

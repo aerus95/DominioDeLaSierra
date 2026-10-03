@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <ItemGroup>
+    <ProjectReference Include="..\DominioDeLaSierra.Domain\DominioDeLaSierra.Domain.csproj" />
     <ProjectReference Include="..\DominioDeLaSierra.Application\DominioDeLaSierra.Application.csproj" />
     <ProjectReference Include="..\DominioDeLaSierra.Infrastructure\DominioDeLaSierra.Infrastructure.csproj" />
   </ItemGroup>
