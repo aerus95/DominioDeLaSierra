@@ -1,6 +1,7 @@
 using DominioDeLaSierra.Application.Products.ImportProducts;
 using DominioDeLaSierra.Domain;
 using DominioDeLaSierra.Domain.Entities;
+using DominioDeLaSierra.Infrastructure.Inventory;
 using DominioDeLaSierra.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -25,6 +26,13 @@ public sealed class ImportProductsService(ApplicationDbContext dbContext) : IImp
             {
                 await transaction.RollbackAsync(cancellationToken);
                 return inspection.Report;
+            }
+
+            var warehouseId = await InventoryStock.FindActiveDefaultWarehouseIdAsync(dbContext, cancellationToken);
+            if (warehouseId is null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return ProductImportReport.Document(InventoryStock.MissingWarehouseMessage);
             }
 
             var now = DateTimeOffset.UtcNow;
@@ -60,6 +68,17 @@ public sealed class ImportProductsService(ApplicationDbContext dbContext) : IImp
                         component.ProductId,
                         component.Quantity));
                 }
+            }
+
+            foreach (var row in inspection.Batch)
+            {
+                InventoryStock.AddOpeningBalance(
+                    dbContext,
+                    warehouseId.Value,
+                    row.Id,
+                    row.Kind,
+                    0,
+                    now);
             }
 
             await dbContext.SaveChangesAsync(cancellationToken);

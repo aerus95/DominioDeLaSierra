@@ -4,6 +4,8 @@ public sealed class ProductMediaOptions
 {
     public const string SectionName = "Media";
     public const int MaxImageBytes = 5 * 1024 * 1024;
+    public const int PageRequestAllowanceBytes = 256 * 1024;
+    public const int MaxPageRequestBytes = MaxImageBytes + PageRequestAllowanceBytes;
     public const int MaxImagePixels = 16_000_000;
     public const int MinEdge = 800;
     public const int CanvasEdge = 1200;

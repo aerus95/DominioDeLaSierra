@@ -61,7 +61,7 @@ public sealed class Product
     {
         if (!IsManagedPrimaryImageUrl(url))
         {
-            throw new ArgumentException("La ruta de la imagen no es válida.", nameof(url));
+            throw new ArgumentException("No se ha podido guardar la imagen.", nameof(url));
         }
 
         PrimaryImageUrl = url;
@@ -71,6 +71,28 @@ public sealed class Product
     public void ClearPrimaryImageUrl(DateTimeOffset updatedAt)
     {
         PrimaryImageUrl = null;
+        UpdatedAt = updatedAt;
+    }
+
+    public void UpdateCatalog(
+        string reference,
+        string name,
+        string slug,
+        string description,
+        Guid categoryId,
+        decimal price,
+        decimal vatRate,
+        bool active,
+        DateTimeOffset updatedAt)
+    {
+        Reference = reference;
+        Name = name;
+        Slug = slug;
+        Description = description;
+        CategoryId = categoryId;
+        Price = price;
+        VatRate = vatRate;
+        Active = active;
         UpdatedAt = updatedAt;
     }
 

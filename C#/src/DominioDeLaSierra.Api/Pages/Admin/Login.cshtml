@@ -29,9 +29,9 @@
             <div class="err">@Model.ErrorMessage</div>
         }
         <label asp-for="Username">Usuario</label>
-        <input asp-for="Username" autocomplete="username" required />
+        <input asp-for="Username" autocomplete="username" required maxlength="@AdminAccountRules.UsernameMaxLength" />
         <label asp-for="Password">Contraseña</label>
-        <input asp-for="Password" type="password" autocomplete="current-password" required />
+        <input asp-for="Password" type="password" autocomplete="current-password" required maxlength="@AdminAccountRules.PasswordMaxLength" />
         <input type="hidden" asp-for="ReturnUrl" />
         <button type="submit">Entrar</button>
     </form>

@@ -20,4 +20,11 @@ public sealed class Wine
         Grape = grape;
         AlcoholPercent = alcoholPercent;
     }
+
+    public void Update(string? vintage, string? grape, decimal? alcoholPercent)
+    {
+        Vintage = vintage;
+        Grape = grape;
+        AlcoholPercent = alcoholPercent;
+    }
 }

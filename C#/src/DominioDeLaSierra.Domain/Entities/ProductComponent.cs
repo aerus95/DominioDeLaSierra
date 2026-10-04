@@ -26,4 +26,14 @@ public sealed class ProductComponent
         ComponentProductId = componentProductId;
         Quantity = quantity;
     }
+
+    public void ChangeQuantity(int quantity)
+    {
+        if (quantity <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(quantity), "La cantidad debe ser mayor que cero.");
+        }
+
+        Quantity = quantity;
+    }
 }

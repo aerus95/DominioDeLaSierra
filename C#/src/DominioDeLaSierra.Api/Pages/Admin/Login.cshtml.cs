@@ -36,6 +36,14 @@ public sealed class LoginModel(AdminCredentialVerifier credentials) : PageModel
     public async Task<IActionResult> OnPostAsync(CancellationToken cancellationToken)
     {
         var returnUrl = LocalReturnUrl(ReturnUrl);
+        if (AdminPostedValues.HasBindingError(ModelState, nameof(Username))
+            || AdminPostedValues.HasBindingError(ModelState, nameof(Password)))
+        {
+            ErrorMessage = "Usuario o contraseña incorrectos.";
+            ReturnUrl = returnUrl;
+            return Page();
+        }
+
         var user = await credentials.AuthenticateAsync(Username, Password, cancellationToken);
         if (user is null)
         {

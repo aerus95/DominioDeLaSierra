@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using DominioDeLaSierra.Api.Security;
 using DominioDeLaSierra.Application.Admin;
+using DominioDeLaSierra.Application.Common;
 using DominioDeLaSierra.Domain;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
@@ -57,39 +58,26 @@ public sealed class UsersModel(IAdminUserManagement users) : PageModel
             return denied;
         }
 
+        if (!AdminPostedValues.TryReadRole(ModelState, "CreateInput.Role", out var role))
+        {
+            ErrorMessage = "El rol no es válido.";
+            return RedirectToPage();
+        }
+
         try
         {
-            var username = CreateInput.Username.Trim();
-            var displayName = CreateInput.DisplayName.Trim();
-            if (username.Length is 0 or > 80)
-            {
-                throw new ArgumentException("El nombre de usuario es obligatorio y no puede superar 80 caracteres.");
-            }
-
-            if (displayName.Length is 0 or > 150)
-            {
-                throw new ArgumentException("El nombre visible es obligatorio y no puede superar 150 caracteres.");
-            }
-
-            if (string.IsNullOrWhiteSpace(CreateInput.Password))
-            {
-                throw new ArgumentException("La contraseña es obligatoria.");
-            }
-
-            if (!Enum.IsDefined(CreateInput.Role))
-            {
-                throw new ArgumentException("El rol no es válido.");
-            }
-
+            var username = AdminAccountRules.NormalizeUsername(CreateInput.Username);
+            var displayName = AdminAccountRules.NormalizeDisplayName(CreateInput.DisplayName);
+            AdminAccountRules.EnsureNewPassword(CreateInput.Password);
             var passwordHash = passwordHasher.HashPassword(null!, CreateInput.Password);
             await users.CreateAsync(
                 username,
                 passwordHash,
                 displayName,
-                CreateInput.Role,
+                role,
                 DateTimeOffset.UtcNow,
                 cancellationToken);
-            StatusMessage = $"Usuario «{username}» creado.";
+            StatusMessage = "Usuario creado correctamente.";
         }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
         {
@@ -106,20 +94,22 @@ public sealed class UsersModel(IAdminUserManagement users) : PageModel
             return denied;
         }
 
+        if (!AdminPostedValues.TryReadGuid(ModelState, nameof(UserId), UserId, out var userId))
+        {
+            ErrorMessage = "El usuario no es válido.";
+            return RedirectToPage();
+        }
+
+        if (!AdminPostedValues.TryReadRole(ModelState, nameof(Role), out var role))
+        {
+            ErrorMessage = "El rol no es válido.";
+            return RedirectToPage();
+        }
+
         try
         {
-            if (UserId == Guid.Empty)
-            {
-                throw new ArgumentException("El usuario no es válido.");
-            }
-
-            if (!Enum.IsDefined(Role))
-            {
-                throw new ArgumentException("El rol no es válido.");
-            }
-
-            await users.ChangeRoleAsync(CurrentActorId(), UserId, Role, cancellationToken);
-            StatusMessage = "Rol actualizado.";
+            await users.ChangeRoleAsync(CurrentActorId(), userId, role, cancellationToken);
+            StatusMessage = "Usuario actualizado correctamente.";
         }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
         {
@@ -136,15 +126,22 @@ public sealed class UsersModel(IAdminUserManagement users) : PageModel
             return denied;
         }
 
+        if (!AdminPostedValues.TryReadGuid(ModelState, nameof(UserId), UserId, out var userId))
+        {
+            ErrorMessage = "El usuario no es válido.";
+            return RedirectToPage();
+        }
+
+        if (!AdminPostedValues.TryReadBool(ModelState, nameof(Active), out var active))
+        {
+            ErrorMessage = "No se ha podido actualizar el estado del usuario.";
+            return RedirectToPage();
+        }
+
         try
         {
-            if (UserId == Guid.Empty)
-            {
-                throw new ArgumentException("El usuario no es válido.");
-            }
-
-            await users.SetActiveAsync(CurrentActorId(), UserId, Active, cancellationToken);
-            StatusMessage = Active ? "Usuario activado." : "Usuario desactivado.";
+            await users.SetActiveAsync(CurrentActorId(), userId, active, cancellationToken);
+            StatusMessage = active ? "Usuario activado." : "Usuario desactivado.";
         }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
         {
@@ -161,20 +158,23 @@ public sealed class UsersModel(IAdminUserManagement users) : PageModel
             return denied;
         }
 
+        if (!AdminPostedValues.TryReadGuid(ModelState, nameof(UserId), UserId, out var userId))
+        {
+            ErrorMessage = "El usuario no es válido.";
+            return RedirectToPage();
+        }
+
+        if (AdminPostedValues.HasBindingError(ModelState, nameof(NewPassword)))
+        {
+            ErrorMessage = "La contraseña no es válida.";
+            return RedirectToPage();
+        }
+
         try
         {
-            if (UserId == Guid.Empty)
-            {
-                throw new ArgumentException("El usuario no es válido.");
-            }
-
-            if (string.IsNullOrWhiteSpace(NewPassword))
-            {
-                throw new ArgumentException("La contraseña es obligatoria.");
-            }
-
+            AdminAccountRules.EnsureNewPassword(NewPassword);
             var passwordHash = passwordHasher.HashPassword(null!, NewPassword);
-            await users.ChangePasswordHashAsync(UserId, passwordHash, cancellationToken);
+            await users.ChangePasswordHashAsync(userId, passwordHash, cancellationToken);
             StatusMessage = "Contraseña actualizada.";
         }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)

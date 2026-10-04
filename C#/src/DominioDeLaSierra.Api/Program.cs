@@ -1,3 +1,4 @@
+using DominioDeLaSierra.Api.Errors;
 using DominioDeLaSierra.Api.Security;
 using DominioDeLaSierra.Domain;
 using DominioDeLaSierra.Infrastructure;
@@ -96,21 +97,49 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+var testingMediaRoot = default(string);
+if (app.Environment.IsEnvironment("Testing"))
+{
+    var databaseName = builder.Configuration["Database:Name"] ?? string.Empty;
+    var databaseHost = builder.Configuration["Database:Host"] ?? "localhost";
+    if (!databaseName.EndsWith("_tests", StringComparison.OrdinalIgnoreCase)
+        || databaseHost is not ("localhost" or "127.0.0.1"))
+    {
+        throw new InvalidOperationException(
+            "El entorno Testing solo puede usar una base local cuyo nombre termina en _tests.");
+    }
+
+    if (string.IsNullOrWhiteSpace(builder.Configuration["Media:RootPath"]))
+    {
+        testingMediaRoot = Path.Combine(Path.GetTempPath(), "dominio-sierra-tests", "media");
+    }
+}
+
 app.UseForwardedHeaders();
 
 if (app.Environment.IsDevelopment())
 {
+    app.UseDeveloperExceptionPage();
     app.UseSwagger();
     app.UseSwaggerUI();
 }
+else if (app.Environment.IsEnvironment("Testing"))
+{
+    app.UseExceptionHandler("/error");
+}
 else
 {
+    app.UseExceptionHandler("/error");
     app.UseHttpsRedirection();
 }
 
+app.UseMiddleware<NotFoundResponseMiddleware>();
+app.UseRouting();
+
 app.UseCors("Frontend");
 
-var mediaRoot = ProductMediaOptions.Resolve(builder.Configuration["Media:RootPath"]);
+var mediaRoot = testingMediaRoot
+    ?? ProductMediaOptions.Resolve(builder.Configuration["Media:RootPath"]);
 Directory.CreateDirectory(mediaRoot);
 var mediaContentTypes = new FileExtensionContentTypeProvider();
 mediaContentTypes.Mappings[".webp"] = "image/webp";
@@ -145,3 +174,5 @@ static Task RedirectOrStatus(Microsoft.AspNetCore.Authentication.RedirectContext
     context.Response.Redirect(context.RedirectUri);
     return Task.CompletedTask;
 }
+
+public partial class Program;

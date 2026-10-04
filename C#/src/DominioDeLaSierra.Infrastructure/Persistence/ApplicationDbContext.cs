@@ -10,6 +10,9 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<Wine> Wines => Set<Wine>();
     public DbSet<ProductComponent> ProductComponents => Set<ProductComponent>();
     public DbSet<AdminUser> AdminUsers => Set<AdminUser>();
+    public DbSet<Warehouse> Warehouses => Set<Warehouse>();
+    public DbSet<Stock> Stocks => Set<Stock>();
+    public DbSet<StockMovement> StockMovements => Set<StockMovement>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

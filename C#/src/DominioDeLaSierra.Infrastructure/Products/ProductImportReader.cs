@@ -7,9 +7,6 @@ namespace DominioDeLaSierra.Infrastructure.Products;
 
 internal static class ProductImportReader
 {
-    private const decimal MaxPrice = 9_999_999_999.99m;
-    private const decimal MaxVatRate = 999.99m;
-    private const decimal MaxAlcohol = 99.99m;
 
     private static readonly HashSet<string> RootProperties = new(StringComparer.Ordinal) { "products" };
     private static readonly HashSet<string> ProductProperties = new(StringComparer.Ordinal)
@@ -163,9 +160,15 @@ internal static class ProductImportReader
         }
 
         var reference = field.GetString()?.Trim() ?? string.Empty;
-        if (reference.Length is 0 or > 80)
+        if (reference.Length is 0 or > CatalogLimits.ProductReferenceMaxLength)
         {
             draft.Issues.Add("La referencia es obligatoria y no puede superar 80 caracteres.");
+            return;
+        }
+
+        if (CatalogText.ContainsDisallowedCharacters(reference, allowLineBreaks: false))
+        {
+            draft.Issues.Add("La referencia contiene caracteres no permitidos.");
             return;
         }
 
@@ -188,9 +191,15 @@ internal static class ProductImportReader
         }
 
         var name = field.GetString()?.Trim() ?? string.Empty;
-        if (name.Length is 0 or > 200)
+        if (name.Length is 0 or > CatalogLimits.ProductNameMaxLength)
         {
             draft.Issues.Add("El nombre es obligatorio y no puede superar 200 caracteres.");
+            return;
+        }
+
+        if (CatalogText.ContainsDisallowedCharacters(name, allowLineBreaks: false))
+        {
+            draft.Issues.Add("El nombre contiene caracteres no permitidos.");
             return;
         }
 
@@ -210,12 +219,17 @@ internal static class ProductImportReader
             }
 
             requested = field.GetString();
+            if (requested is not null && CatalogText.ContainsDisallowedCharacters(requested, allowLineBreaks: false))
+            {
+                draft.Issues.Add("El slug contiene caracteres no permitidos.");
+                return;
+            }
         }
 
         var slug = string.IsNullOrWhiteSpace(requested)
             ? CatalogText.Slugify(draft.Name ?? string.Empty)
             : CatalogText.Slugify(requested);
-        if (string.IsNullOrWhiteSpace(slug) || slug.Length > 220)
+        if (string.IsNullOrWhiteSpace(slug) || slug.Length > CatalogLimits.ProductSlugMaxLength)
         {
             draft.Issues.Add("El slug es obligatorio y no puede superar 220 caracteres.");
             return;
@@ -239,7 +253,20 @@ internal static class ProductImportReader
             return;
         }
 
-        draft.Description = field.GetString()?.Trim() ?? string.Empty;
+        var description = field.GetString()?.Trim() ?? string.Empty;
+        if (description.Length > CatalogLimits.ProductDescriptionMaxLength)
+        {
+            draft.Issues.Add($"La descripción no puede superar {CatalogLimits.ProductDescriptionMaxLength} caracteres.");
+            return;
+        }
+
+        if (CatalogText.ContainsDisallowedCharacters(description, allowLineBreaks: true))
+        {
+            draft.Issues.Add("La descripción contiene caracteres no permitidos.");
+            return;
+        }
+
+        draft.Description = description;
     }
 
     private static void ReadCategory(JsonElement item, ProductImportDraft draft)
@@ -257,6 +284,12 @@ internal static class ProductImportReader
         }
 
         var input = field.GetString()?.Trim() ?? string.Empty;
+        if (CatalogText.ContainsDisallowedCharacters(input, allowLineBreaks: false))
+        {
+            draft.Issues.Add("La categoría contiene caracteres no permitidos.");
+            return;
+        }
+
         var slug = CatalogText.Slugify(input);
         draft.CategoryInput = input;
         if (string.IsNullOrWhiteSpace(slug))
@@ -271,7 +304,7 @@ internal static class ProductImportReader
 
     private static void ReadPrice(JsonElement item, ProductImportDraft draft)
     {
-        if (!TryReadDecimal(item, "price", "El precio", MaxPrice, out var price, out var error))
+        if (!TryReadDecimal(item, "price", "El precio", CatalogLimits.MaxPrice, out var price, out var error))
         {
             draft.Issues.Add(error!);
             return;
@@ -283,7 +316,7 @@ internal static class ProductImportReader
 
     private static void ReadVatRate(JsonElement item, ProductImportDraft draft)
     {
-        if (!TryReadDecimal(item, "vatRate", "El IVA", MaxVatRate, out var vatRate, out var error))
+        if (!TryReadDecimal(item, "vatRate", "El IVA", CatalogLimits.MaxVatRate, out var vatRate, out var error))
         {
             draft.Issues.Add(error!);
             return;
@@ -353,14 +386,14 @@ internal static class ProductImportReader
         }
 
         CollectUnknownProperties(field, WineProperties, draft.Issues);
-        draft.Vintage = ReadOptionalText(field, "vintage", 20, "La añada no puede superar 20 caracteres.", draft.Issues);
-        draft.Grape = ReadOptionalText(field, "grape", 150, "La uva no puede superar 150 caracteres.", draft.Issues);
+        draft.Vintage = ReadWineText(field, "vintage", CatalogWine.NormalizeVintage, draft.Issues);
+        draft.Grape = ReadWineText(field, "grape", CatalogWine.NormalizeGrape, draft.Issues);
         if (!TryGetField(field, "alcoholPercent", out var alcohol) || alcohol.ValueKind == JsonValueKind.Null)
         {
             return;
         }
 
-        if (!TryRoundNonNegative(alcohol, MaxAlcohol, out var rounded))
+        if (!TryRoundNonNegative(alcohol, CatalogLimits.MaxAlcoholPercent, out var rounded))
         {
             draft.Issues.Add("El grado alcohólico debe estar entre 0 y 99,99.");
             return;
@@ -412,9 +445,13 @@ internal static class ProductImportReader
         else
         {
             reference = referenceField.GetString()?.Trim() ?? string.Empty;
-            if (reference.Length is 0 or > 80)
+            if (reference.Length is 0 or > CatalogLimits.ComponentReferenceMaxLength)
             {
                 draft.Issues.Add("La referencia de un componente es obligatoria y no puede superar 80 caracteres.");
+            }
+            else if (CatalogText.ContainsDisallowedCharacters(reference, allowLineBreaks: false))
+            {
+                draft.Issues.Add("La referencia de un componente contiene caracteres no permitidos.");
             }
             else
             {
@@ -434,7 +471,7 @@ internal static class ProductImportReader
         {
             draft.Issues.Add(referenceValid
                 ? $"La cantidad del componente «{reference}» debe ser un entero mayor que cero."
-                : "La cantidad de un componente debe ser un entero mayor que cero.");
+                : CatalogComposition.InvalidQuantityMessage);
         }
         else
         {
@@ -486,7 +523,7 @@ internal static class ProductImportReader
 
                 if (!draft.HasComponents || draft.Components.Count == 0 || draft.Components.All(component => !component.IsComplete))
                 {
-                    draft.Issues.Add("Un pack debe incluir al menos un componente.");
+                    draft.Issues.Add(CatalogComposition.EmptyPackMessage);
                 }
 
                 break;
@@ -499,7 +536,7 @@ internal static class ProductImportReader
         {
             if (group.Count() > 1)
             {
-                draft.Issues.Add($"El componente «{group.Key}» está duplicado.");
+                draft.Issues.Add(CatalogComposition.DuplicateComponentMessage(group.Key!));
             }
         }
     }
@@ -536,7 +573,11 @@ internal static class ProductImportReader
         }
     }
 
-    private static string? ReadOptionalText(JsonElement item, string name, int maxLength, string lengthError, List<string> issues)
+    private static string? ReadWineText(
+        JsonElement item,
+        string name,
+        Func<string?, string?> normalize,
+        List<string> issues)
     {
         if (!TryGetField(item, name, out var field) || field.ValueKind == JsonValueKind.Null)
         {
@@ -549,19 +590,15 @@ internal static class ProductImportReader
             return null;
         }
 
-        var text = field.GetString()?.Trim();
-        if (string.IsNullOrEmpty(text))
+        try
         {
+            return normalize(field.GetString());
+        }
+        catch (ArgumentException exception)
+        {
+            issues.Add(exception.Message);
             return null;
         }
-
-        if (text.Length > maxLength)
-        {
-            issues.Add(lengthError);
-            return null;
-        }
-
-        return text;
     }
 
     private static bool TryReadDecimal(
@@ -611,13 +648,7 @@ internal static class ProductImportReader
             return false;
         }
 
-        if (number != decimal.Truncate(number) || number < 1 || number > int.MaxValue)
-        {
-            return false;
-        }
-
-        quantity = (int)number;
-        return true;
+        return CatalogComposition.TryReadPositiveQuantity(number, out quantity);
     }
 
     private static bool TryGetField(JsonElement item, string name, out JsonElement field) =>

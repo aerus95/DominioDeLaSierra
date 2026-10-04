@@ -64,7 +64,7 @@ public sealed class AdminUser
     {
         if (string.IsNullOrWhiteSpace(passwordHash) || passwordHash.Length > 500)
         {
-            throw new ArgumentException("El hash de la contraseña no es válido.", nameof(passwordHash));
+            throw new ArgumentException("La contraseña no es válida.", nameof(passwordHash));
         }
 
         PasswordHash = passwordHash;

@@ -45,7 +45,7 @@ internal sealed class ProductImportDraft
     public Guid NewId { get; set; }
 
     public string Label =>
-        ReferenceValid ? $"Producto [{Reference}]" : $"Producto [fila {Row}]";
+        ReferenceValid ? $"Producto «{Reference}»" : $"Producto de la fila {Row}";
 }
 
 internal sealed class ProductImportReadResult

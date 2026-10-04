@@ -1,5 +1,6 @@
 using System.Data;
 using DominioDeLaSierra.Application.Admin;
+using DominioDeLaSierra.Application.Common;
 using DominioDeLaSierra.Domain;
 using DominioDeLaSierra.Domain.Entities;
 using DominioDeLaSierra.Infrastructure.Persistence;
@@ -51,7 +52,7 @@ public sealed class AdminUserManagement(ApplicationDbContext dbContext) : IAdmin
             .AnyAsync(user => user.Username == username, cancellationToken);
         if (usernameTaken)
         {
-            throw new InvalidOperationException("Ese nombre de usuario ya existe.");
+            throw new InvalidOperationException("Ya existe un usuario con ese nombre.");
         }
 
         dbContext.AdminUsers.Add(new AdminUser(
@@ -69,7 +70,7 @@ public sealed class AdminUserManagement(ApplicationDbContext dbContext) : IAdmin
         }
         catch (DbUpdateException exception) when (IsUniqueViolation(exception))
         {
-            throw new InvalidOperationException("Ese nombre de usuario ya existe.");
+            throw new InvalidOperationException("Ya existe un usuario con ese nombre.");
         }
     }
 
@@ -223,36 +224,20 @@ public sealed class AdminUserManagement(ApplicationDbContext dbContext) : IAdmin
     private System.Data.Common.DbTransaction CurrentDbTransaction()
     {
         return dbContext.Database.CurrentTransaction?.GetDbTransaction()
-            ?? throw new InvalidOperationException("La comprobación de administradores activos requiere una transacción.");
+            ?? throw new InvalidOperationException("No se ha podido actualizar el usuario.");
     }
 
-    private static string RequireUsername(string username)
-    {
-        username = username.Trim();
-        if (username.Length is 0 or > 80)
-        {
-            throw new ArgumentException("El nombre de usuario es obligatorio y no puede superar 80 caracteres.", nameof(username));
-        }
+    private static string RequireUsername(string username) =>
+        AdminAccountRules.NormalizeUsername(username);
 
-        return username;
-    }
-
-    private static string RequireDisplayName(string displayName)
-    {
-        displayName = displayName.Trim();
-        if (displayName.Length is 0 or > 150)
-        {
-            throw new ArgumentException("El nombre visible es obligatorio y no puede superar 150 caracteres.", nameof(displayName));
-        }
-
-        return displayName;
-    }
+    private static string RequireDisplayName(string displayName) =>
+        AdminAccountRules.NormalizeDisplayName(displayName);
 
     private static void RequirePasswordHash(string passwordHash)
     {
-        if (string.IsNullOrWhiteSpace(passwordHash) || passwordHash.Length > 500)
+        if (string.IsNullOrWhiteSpace(passwordHash) || passwordHash.Length > AdminAccountRules.PasswordHashMaxLength)
         {
-            throw new ArgumentException("El hash de la contraseña no es válido.", nameof(passwordHash));
+            throw new ArgumentException("La contraseña no es válida.", nameof(passwordHash));
         }
     }
 

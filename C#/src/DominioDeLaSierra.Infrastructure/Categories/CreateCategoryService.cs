@@ -10,39 +10,44 @@ public sealed class CreateCategoryService(ApplicationDbContext dbContext) : ICre
 {
     public async Task<CreatedCategoryDto> ExecuteAsync(CreateCategoryCommand command, CancellationToken cancellationToken = default)
     {
-        var name = command.Name.Trim();
-        if (name.Length is 0 or > 150)
-        {
-            throw new ArgumentException("El nombre es obligatorio y no puede superar 150 caracteres.", nameof(command));
-        }
-
-        var slug = string.IsNullOrWhiteSpace(command.Slug)
-            ? CatalogText.Slugify(name)
-            : CatalogText.Slugify(command.Slug);
-
-        if (string.IsNullOrWhiteSpace(slug) || slug.Length > 180)
-        {
-            throw new ArgumentException("El slug es obligatorio y no puede superar 180 caracteres.", nameof(command));
-        }
+        var name = CatalogText.RequireSingleLine(
+            command.Name,
+            CatalogLimits.CategoryNameMaxLength,
+            "El nombre es obligatorio.",
+            "El nombre no puede superar 150 caracteres.",
+            "El nombre contiene caracteres no permitidos.");
+        var slug = CatalogText.RequireSlug(
+            command.Slug,
+            name,
+            CatalogLimits.CategorySlugMaxLength,
+            "El slug no es válido.",
+            "El slug no puede superar 180 caracteres.");
 
         if (command.ParentCategoryId is { } parentId)
         {
             var parentExists = await dbContext.Categories.AnyAsync(category => category.Id == parentId, cancellationToken);
             if (!parentExists)
             {
-                throw new ArgumentException("La categoría padre no existe.", nameof(command));
+                throw new ArgumentException(CatalogConflicts.UnavailableParentCategory, nameof(command));
             }
         }
 
         var slugTaken = await dbContext.Categories.AnyAsync(category => category.Slug == slug, cancellationToken);
         if (slugTaken)
         {
-            throw new InvalidOperationException($"Ya existe una categoría con el slug «{slug}».");
+            throw new InvalidOperationException(CatalogConflicts.DuplicateCategorySlug);
         }
 
         var category = new Category(Guid.NewGuid(), name, slug, command.ParentCategoryId, command.Active);
         dbContext.Categories.Add(category);
-        await dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException exception) when (CatalogConflicts.TryGetCategoryMessage(exception, out var message))
+        {
+            throw new InvalidOperationException(message);
+        }
         return new CreatedCategoryDto(
             category.Id,
             category.Name,

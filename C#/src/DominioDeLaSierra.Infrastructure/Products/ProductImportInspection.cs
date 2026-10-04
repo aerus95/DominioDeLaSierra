@@ -1,3 +1,4 @@
+using DominioDeLaSierra.Application.Common;
 using DominioDeLaSierra.Application.Products.ImportProducts;
 using DominioDeLaSierra.Domain;
 using DominioDeLaSierra.Infrastructure.Persistence;
@@ -125,7 +126,7 @@ internal static class ProductImportInspection
         var reference = component.Reference!;
         if (draft.ReferenceValid && string.Equals(reference, draft.Reference, StringComparison.Ordinal))
         {
-            draft.Issues.Add($"El componente «{reference}» es el propio producto.");
+            draft.Issues.Add(CatalogComposition.SelfComponentMessage(reference));
             return;
         }
 
@@ -133,35 +134,35 @@ internal static class ProductImportInspection
         {
             if (targets.Any(target => target.Kind == ProductKind.Pack))
             {
-                draft.Issues.Add($"El componente «{reference}» es un pack.");
+                draft.Issues.Add(CatalogComposition.PackComponentMessage(reference));
                 return;
             }
 
-            if (targets.Any(target => target.Kind is ProductKind.Standard or ProductKind.Wine))
+            if (targets.Any(target => target.Kind is { } kind && CatalogComposition.IsEligibleComponent(kind)))
             {
                 component.ResolvesInsideFile = true;
                 return;
             }
 
-            draft.Issues.Add($"El componente «{reference}» no es un producto estándar o vino.");
+            draft.Issues.Add(CatalogComposition.IneligibleComponentMessage(reference));
             return;
         }
 
         if (!existingByReference.TryGetValue(reference, out var existing))
         {
-            draft.Issues.Add($"El componente «{reference}» no existe.");
+            draft.Issues.Add(CatalogComposition.MissingComponentMessage(reference));
             return;
         }
 
         if (existing.Kind == ProductKind.Pack)
         {
-            draft.Issues.Add($"El componente «{reference}» es un pack.");
+            draft.Issues.Add(CatalogComposition.PackComponentMessage(reference));
             return;
         }
 
-        if (existing.Kind is not (ProductKind.Standard or ProductKind.Wine))
+        if (!CatalogComposition.IsEligibleComponent(existing.Kind))
         {
-            draft.Issues.Add($"El componente «{reference}» no es un producto estándar o vino.");
+            draft.Issues.Add(CatalogComposition.IneligibleComponentMessage(reference));
             return;
         }
 

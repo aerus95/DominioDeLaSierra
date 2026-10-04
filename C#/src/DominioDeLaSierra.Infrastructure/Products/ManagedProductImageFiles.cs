@@ -58,7 +58,7 @@ internal static class ManagedProductImageFiles
             || fileName.Contains('/')
             || fileName.Contains('\\'))
         {
-            throw new InvalidOperationException("El nombre de la imagen no es válido.");
+            throw new InvalidOperationException(ProductImageContent.StorageFailureMessage);
         }
 
         var fullPath = Path.GetFullPath(Path.Combine(productsDirectory, fileName));
@@ -74,7 +74,7 @@ internal static class ManagedProductImageFiles
             + Path.DirectorySeparatorChar;
         if (!full.StartsWith(prefix, PathComparison()))
         {
-            throw new InvalidOperationException("La ruta de la imagen queda fuera del directorio permitido.");
+            throw new InvalidOperationException(ProductImageContent.StorageFailureMessage);
         }
     }
 

@@ -6,6 +6,7 @@ using DominioDeLaSierra.Application.Products.CreateProduct;
 using DominioDeLaSierra.Application.Products.GetProducts;
 using DominioDeLaSierra.Application.Products.ImportProducts;
 using DominioDeLaSierra.Application.Products.SetPrimaryImage;
+using DominioDeLaSierra.Application.Products.UpdateProduct;
 using DominioDeLaSierra.Infrastructure.Admin;
 using DominioDeLaSierra.Infrastructure.Categories;
 using DominioDeLaSierra.Infrastructure.Persistence;
@@ -32,6 +33,7 @@ public static class DependencyInjection
         services.AddScoped<IAdminUserManagement, AdminUserManagement>();
         services.AddScoped<ICreateCategory, CreateCategoryService>();
         services.AddScoped<ICreateProduct, CreateProductService>();
+        services.AddScoped<IUpdateProduct, UpdateProductService>();
         services.AddScoped<ISetProductPrimaryImage, SetProductPrimaryImageService>();
         services.AddScoped<IClearProductPrimaryImage, ClearProductPrimaryImageService>();
         services.AddScoped<IValidateProductImport, ValidateProductImportService>();

@@ -18,8 +18,6 @@
         header p { margin: 0 0 6px; letter-spacing: .18em; text-transform: uppercase; font-size: 11px; color: var(--gold); }
         header h1 { margin: 0; font-weight: 500; font-size: 28px; }
         header small { display: block; margin-top: 8px; opacity: .75; }
-        nav { padding: 12px 32px; background: #2d1519; }
-        nav a { color: #e8d7b8; margin-right: 18px; text-decoration: none; font-size: 13px; }
         .wrap { padding: 28px 32px 48px; }
         .flash { padding: 12px 14px; border-radius: 8px; margin-bottom: 18px; }
         .flash.ok { background: #e7f3ea; color: var(--ok); }
@@ -31,17 +29,33 @@
         .row { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr auto; gap: 12px; align-items: end; }
         @@media (max-width: 980px) { .row { grid-template-columns: 1fr; } }
         button { background: var(--wine); color: #fff; border: 0; border-radius: 999px; padding: 10px 18px; font: 600 14px inherit; cursor: pointer; }
+        .accounts { overflow-x: auto; }
         table { width: 100%; border-collapse: collapse; font-size: 13px; }
-        th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+        th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
         th { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: #6d6560; }
         .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; }
         .on { background: #e7f3ea; color: var(--ok); }
         .off { background: #f8e8e9; color: var(--err); }
-        .ops { display: flex; flex-direction: column; gap: 8px; min-width: 220px; }
-        .ops form { display: flex; gap: 6px; align-items: center; }
-        .ops input, .ops select { width: auto; min-width: 0; flex: 1; padding: 6px 8px; }
-        .ops button { padding: 6px 12px; font-size: 12px; white-space: nowrap; }
+        td.actions { width: 1%; vertical-align: middle; }
+        .action-line { display: grid; grid-template-columns: 92px 168px auto; gap: 8px; align-items: center; margin: 0 0 8px; }
+        .action-line:last-child { margin-bottom: 0; }
+        .action-state { grid-template-columns: 92px auto; }
+        .action-line span { font-size: 12px; font-weight: 600; color: #6d6560; }
+        .actions select, .actions input { width: 168px; max-width: 100%; padding: 6px 8px; font-size: 13px; }
+        .actions button { justify-self: start; padding: 6px 12px; font-size: 12px; line-height: 1.2; white-space: nowrap; }
+        .actions .state { background: transparent; color: var(--wine); border: 1px solid var(--wine); }
         .muted { color: #756c65; font-size: 13px; margin-top: 0; }
+        @@media (max-width: 900px) {
+            .accounts table, .accounts thead, .accounts tbody, .accounts tr, .accounts th, .accounts td { display: block; width: auto; }
+            .accounts thead { display: none; }
+            .accounts tr { border: 1px solid var(--line); border-radius: 12px; margin-bottom: 12px; padding: 8px; }
+            .accounts td { border: 0; padding: 6px 8px; }
+            .accounts td::before { content: attr(data-label); display: block; margin-bottom: 2px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: #6d6560; }
+        }
+        @@media (max-width: 640px) {
+            .action-line, .action-state { grid-template-columns: 1fr; }
+            .actions select, .actions input { width: 100%; }
+        }
     </style>
 </head>
 <body>
@@ -63,20 +77,20 @@
 
         <section class="card">
             <h2>Nuevo usuario</h2>
-            <p class="muted">La cuenta queda activa. La contraseña no se guarda en claro.</p>
+            <p class="muted">La cuenta queda activa.</p>
             <form method="post" asp-page-handler="Create">
                 <div class="row">
                     <div>
-                        <label asp-for="CreateInput.Username">Username</label>
-                        <input asp-for="CreateInput.Username" autocomplete="off" maxlength="80" required />
+                        <label asp-for="CreateInput.Username">Nombre de usuario</label>
+                        <input asp-for="CreateInput.Username" autocomplete="off" maxlength="@AdminAccountRules.UsernameMaxLength" pattern="[A-Za-z0-9._-]+" title="Solo letras, números, puntos, guiones y guiones bajos." required />
                     </div>
                     <div>
                         <label asp-for="CreateInput.DisplayName">Nombre visible</label>
-                        <input asp-for="CreateInput.DisplayName" autocomplete="off" maxlength="150" required />
+                        <input asp-for="CreateInput.DisplayName" autocomplete="off" maxlength="@AdminAccountRules.DisplayNameMaxLength" required />
                     </div>
                     <div>
                         <label asp-for="CreateInput.Password">Contraseña</label>
-                        <input asp-for="CreateInput.Password" type="password" autocomplete="new-password" required />
+                        <input asp-for="CreateInput.Password" type="password" autocomplete="new-password" required minlength="@AdminAccountRules.NewPasswordMinLength" maxlength="@AdminAccountRules.PasswordMaxLength" />
                     </div>
                     <div>
                         <label asp-for="CreateInput.Role">Rol</label>
@@ -93,52 +107,53 @@
             </form>
         </section>
 
-        <section class="card">
+        <section class="card accounts">
             <h2>Cuentas</h2>
             <table>
                 <thead>
                     <tr>
-                        <th>Username</th>
+                        <th>Nombre de usuario</th>
                         <th>Nombre</th>
                         <th>Rol</th>
                         <th>Activo</th>
                         <th>Creado</th>
                         <th>Último acceso</th>
-                        <th></th>
+                        <th>Acciones</th>
                     </tr>
                 </thead>
                 <tbody>
                 @foreach (var user in Model.Items)
                 {
                     <tr>
-                        <td>@user.Username</td>
-                        <td>@user.DisplayName</td>
-                        <td>@user.Role</td>
-                        <td><span class="badge @(user.Active ? "on" : "off")">@(user.Active ? "Sí" : "No")</span></td>
-                        <td>@user.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
-                        <td>@(user.LastLoginAt is null ? "—" : user.LastLoginAt.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm"))</td>
-                        <td>
-                            <div class="ops">
-                                <form method="post" asp-page-handler="ChangeRole">
-                                    <input type="hidden" name="UserId" value="@user.Id" />
-                                    <select name="Role">
-                                        <option value="Administrator" selected="@(user.Role == AdminRole.Administrator ? "selected" : null)">Administrator</option>
-                                        <option value="Manager" selected="@(user.Role == AdminRole.Manager ? "selected" : null)">Manager</option>
-                                        <option value="Viewer" selected="@(user.Role == AdminRole.Viewer ? "selected" : null)">Viewer</option>
-                                    </select>
-                                    <button type="submit">Rol</button>
-                                </form>
-                                <form method="post" asp-page-handler="SetActive">
-                                    <input type="hidden" name="UserId" value="@user.Id" />
-                                    <input type="hidden" name="Active" value="@(user.Active ? "false" : "true")" />
-                                    <button type="submit">@(user.Active ? "Desactivar" : "Activar")</button>
-                                </form>
-                                <form method="post" asp-page-handler="ChangePassword">
-                                    <input type="hidden" name="UserId" value="@user.Id" />
-                                    <input type="password" name="NewPassword" autocomplete="new-password" placeholder="Nueva contraseña" required />
-                                    <button type="submit">Clave</button>
-                                </form>
-                            </div>
+                        <td data-label="Nombre de usuario">@user.Username</td>
+                        <td data-label="Nombre">@user.DisplayName</td>
+                        <td data-label="Rol">@user.Role</td>
+                        <td data-label="Activo"><span class="badge @(user.Active ? "on" : "off")">@(user.Active ? "Sí" : "No")</span></td>
+                        <td data-label="Creado">@user.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                        <td data-label="Último acceso">@(user.LastLoginAt is null ? "—" : user.LastLoginAt.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm"))</td>
+                        <td class="actions" data-label="Acciones">
+                            <form class="action-line" method="post" asp-page-handler="ChangeRole">
+                                <span>Rol</span>
+                                <input type="hidden" name="UserId" value="@user.Id" />
+                                <select name="Role">
+                                    <option value="Administrator" selected="@(user.Role == AdminRole.Administrator ? "selected" : null)">Administrator</option>
+                                    <option value="Manager" selected="@(user.Role == AdminRole.Manager ? "selected" : null)">Manager</option>
+                                    <option value="Viewer" selected="@(user.Role == AdminRole.Viewer ? "selected" : null)">Viewer</option>
+                                </select>
+                                <button type="submit">Guardar</button>
+                            </form>
+                            <form class="action-line" method="post" asp-page-handler="ChangePassword">
+                                <span>Contraseña</span>
+                                <input type="hidden" name="UserId" value="@user.Id" />
+                                <input type="password" name="NewPassword" autocomplete="new-password" placeholder="Nueva contraseña" required minlength="@AdminAccountRules.NewPasswordMinLength" maxlength="@AdminAccountRules.PasswordMaxLength" />
+                                <button type="submit">Cambiar</button>
+                            </form>
+                            <form class="action-line action-state" method="post" asp-page-handler="SetActive">
+                                <span>Estado</span>
+                                <input type="hidden" name="UserId" value="@user.Id" />
+                                <input type="hidden" name="Active" value="@(user.Active ? "false" : "true")" />
+                                <button class="state" type="submit">@(user.Active ? "Desactivar" : "Activar")</button>
+                            </form>
                         </td>
                     </tr>
                 }

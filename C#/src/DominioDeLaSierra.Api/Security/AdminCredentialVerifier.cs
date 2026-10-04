@@ -1,4 +1,5 @@
 using DominioDeLaSierra.Application.Admin;
+using DominioDeLaSierra.Application.Common;
 using Microsoft.AspNetCore.Identity;
 
 namespace DominioDeLaSierra.Api.Security;
@@ -12,18 +13,18 @@ public sealed class AdminCredentialVerifier(IAdminUserAuthentication users)
         string? password,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(username) || string.IsNullOrEmpty(password))
+        if (!AdminAccountRules.IsWithinLoginLimits(username, password))
         {
             return null;
         }
 
-        var user = await users.FindActiveByUsernameAsync(username.Trim(), cancellationToken);
+        var user = await users.FindActiveByUsernameAsync(username!.Trim(), cancellationToken);
         if (user is null)
         {
             return null;
         }
 
-        var result = passwordHasher.VerifyHashedPassword(user, user.PasswordHash, password);
+        var result = passwordHasher.VerifyHashedPassword(user, user.PasswordHash, password!);
         if (result is not (PasswordVerificationResult.Success or PasswordVerificationResult.SuccessRehashNeeded))
         {
             return null;

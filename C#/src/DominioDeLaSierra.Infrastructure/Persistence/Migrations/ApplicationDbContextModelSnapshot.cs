@@ -194,6 +194,119 @@ namespace DominioDeLaSierra.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("DominioDeLaSierra.Domain.Entities.Stock", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("WarehouseId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductId");
+
+                    b.HasIndex("WarehouseId", "ProductId")
+                        .IsUnique();
+
+                    b.ToTable("Stocks", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_Stocks_Quantity", "\"Quantity\" >= 0");
+                        });
+                });
+
+            modelBuilder.Entity("DominioDeLaSierra.Domain.Entities.StockMovement", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("StockId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StockId", "OccurredAt");
+
+                    b.ToTable("StockMovements", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_StockMovements_Quantity", "\"Quantity\" <> 0");
+                        });
+                });
+
+            modelBuilder.Entity("DominioDeLaSierra.Domain.Entities.Warehouse", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("Active")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsDefault")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.HasIndex("IsDefault")
+                        .IsUnique()
+                        .HasFilter("\"IsDefault\" = TRUE");
+
+                    b.ToTable("Warehouses", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("8f4e2c10-6b3a-4d77-9c2e-1a5b7d3e6f90"),
+                            Active = true,
+                            Code = "principal",
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 10, 4, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            IsDefault = true,
+                            Name = "Bodega"
+                        });
+                });
+
             modelBuilder.Entity("DominioDeLaSierra.Domain.Entities.Wine", b =>
                 {
                     b.Property<Guid>("ProductId")
@@ -255,6 +368,36 @@ namespace DominioDeLaSierra.Infrastructure.Persistence.Migrations
                     b.Navigation("PackProduct");
                 });
 
+            modelBuilder.Entity("DominioDeLaSierra.Domain.Entities.Stock", b =>
+                {
+                    b.HasOne("DominioDeLaSierra.Domain.Entities.Product", "Product")
+                        .WithMany()
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("DominioDeLaSierra.Domain.Entities.Warehouse", "Warehouse")
+                        .WithMany("Stocks")
+                        .HasForeignKey("WarehouseId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Product");
+
+                    b.Navigation("Warehouse");
+                });
+
+            modelBuilder.Entity("DominioDeLaSierra.Domain.Entities.StockMovement", b =>
+                {
+                    b.HasOne("DominioDeLaSierra.Domain.Entities.Stock", "Stock")
+                        .WithMany("Movements")
+                        .HasForeignKey("StockId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Stock");
+                });
+
             modelBuilder.Entity("DominioDeLaSierra.Domain.Entities.Wine", b =>
                 {
                     b.HasOne("DominioDeLaSierra.Domain.Entities.Product", "Product")
@@ -280,6 +423,16 @@ namespace DominioDeLaSierra.Infrastructure.Persistence.Migrations
                     b.Navigation("UsedInPacks");
 
                     b.Navigation("Wine");
+                });
+
+            modelBuilder.Entity("DominioDeLaSierra.Domain.Entities.Stock", b =>
+                {
+                    b.Navigation("Movements");
+                });
+
+            modelBuilder.Entity("DominioDeLaSierra.Domain.Entities.Warehouse", b =>
+                {
+                    b.Navigation("Stocks");
                 });
 #pragma warning restore 612, 618
         }

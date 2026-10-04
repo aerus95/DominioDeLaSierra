@@ -23,8 +23,6 @@
         .flash { padding: 12px 14px; border-radius: 8px; margin-bottom: 18px; }
         .flash.ok { background: #e7f3ea; color: var(--ok); }
         .flash.err { background: #f8e8e9; color: var(--err); }
-        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; margin-bottom: 28px; }
-        @@media (max-width: 980px) { .grid { grid-template-columns: 1fr; } }
         section.card { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 20px; }
         h2 { margin: 0 0 14px; font-size: 18px; color: var(--wine); }
         label { display: block; font-size: 12px; font-weight: 600; margin: 10px 0 4px; }
@@ -36,14 +34,19 @@
         button { background: var(--wine); color: #fff; border: 0; border-radius: 999px; padding: 10px 18px; font: 600 14px inherit; cursor: pointer; }
         table { width: 100%; border-collapse: collapse; font-size: 13px; }
         th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+        table.products th, table.products td { vertical-align: middle; }
+        table.products .col-text { text-align: left; }
+        table.products .col-center { text-align: center; }
+        table.products .image-cell { justify-content: center; }
         th { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: #6d6560; }
         .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; }
         .on { background: #e7f3ea; color: var(--ok); }
         .off { background: #f8e8e9; color: var(--err); }
         code { font-size: 12px; }
         .muted { color: #756c65; font-size: 13px; margin-top: 0; }
-        .section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+        .section-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 14px; }
         .section-head h2 { margin: 0; }
+        .section-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
         .section-head button { padding: 8px 14px; font-size: 13px; }
         .image-cell { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
         .thumb-frame { width: 64px; height: 64px; border-radius: 8px; background: #eee8df; }
@@ -57,6 +60,7 @@
         .js-image-form { height: 0; margin: 0; overflow: hidden; }
         .image-file { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); border: 0; }
         .modal[hidden] { display: none !important; }
+        body:has(.modal:not([hidden])) { overflow: hidden; }
         .modal { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; padding: 24px; background: rgba(22, 12, 16, .72); }
         .modal-card { width: min(920px, 100%); background: #fff; border-radius: 14px; padding: 18px; }
         .modal-card.compact { width: min(640px, 100%); }
@@ -70,6 +74,23 @@
         .modal-bar strong { color: var(--wine); }
         .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
         .modal-actions .quiet { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+        .edit-card { width: min(760px, 100%); max-height: calc(100vh - 48px); overflow: auto; }
+        .kind-line { margin: 0 0 8px; }
+        .form-error { margin: 0 0 12px; }
+        .block-title { margin: 18px 0 0; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--wine); }
+        .component-row, .component-head { display: grid; grid-template-columns: minmax(0, 1fr) 96px auto; gap: 8px; align-items: center; }
+        .component-head { margin-top: 8px; font-size: 12px; font-weight: 600; }
+        .component-row { margin-top: 8px; }
+        .component-row button, #edit-add-component, #create-add-component { padding: 8px 12px; font-size: 13px; }
+        #create-add-component { margin-top: 10px; }
+        .derived-note { margin: 8px 0 0; }
+        .modal-card img.create-image-preview { display: block; width: 120px; height: 120px; max-height: 120px; object-fit: contain; object-position: center; background: #eee8df; border-radius: 8px; }
+        .create-image-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+        #create-image-pick, #create-image-change, #create-image-clear { padding: 8px 12px; font-size: 13px; }
+        .edit-button { padding: 5px 11px; font-size: 12px; white-space: nowrap; }
+        @@media (max-width: 640px) {
+            .component-row, .component-head, .row { grid-template-columns: 1fr; }
+        }
     </style>
 </head>
 <body>
@@ -77,8 +98,9 @@
     <header>
         <p>Dominio de la Sierra · Administración</p>
         <h1>Panel de catálogo</h1>
-        <small>Lee el catálogo en PostgreSQL. Solo Administrator y Manager pueden modificarlo.</small>
+        <small>Solo Administrator y Manager pueden modificar el catálogo.</small>
     </header>
+    <form id="page-antiforgery" hidden>@Html.AntiForgeryToken()</form>
     <div class="wrap">
         @if (!string.IsNullOrWhiteSpace(Model.StatusMessage))
         {
@@ -89,79 +111,19 @@
             <div class="flash err">@Model.ErrorMessage</div>
         }
 
-        @if (Model.CanWrite)
-        {
-        <div class="grid">
-            <section class="card">
-                <h2>Nueva categoría</h2>
-                <p class="muted">Si dejas el slug vacío se genera a partir del nombre.</p>
-                <form method="post" asp-page-handler="CreateCategory">
-                    <label asp-for="InputCategory.Name">Nombre</label>
-                    <input asp-for="InputCategory.Name" required maxlength="150" />
-                    <label asp-for="InputCategory.Slug">Slug (opcional)</label>
-                    <input asp-for="InputCategory.Slug" maxlength="180" placeholder="tintos" />
-                    <label asp-for="InputCategory.ParentCategoryId">Categoría padre</label>
-                    <select asp-for="InputCategory.ParentCategoryId">
-                        <option value="">Ninguna</option>
-                        @foreach (var category in Model.Categories)
-                        {
-                            <option value="@category.Id">@category.Name</option>
-                        }
-                    </select>
-                    <label class="check"><input asp-for="InputCategory.Active" /> Activa</label>
-                    <button type="submit">Guardar categoría</button>
-                </form>
-            </section>
-
-            <section class="card">
-                <h2>Nuevo producto</h2>
-                <p class="muted">El listado público solo muestra productos y categorías activos.</p>
-                <form method="post" asp-page-handler="CreateProduct">
-                    <div class="row">
-                        <div>
-                            <label asp-for="InputProduct.Reference">Referencia</label>
-                            <input asp-for="InputProduct.Reference" required maxlength="80" placeholder="CRZ-002" />
-                        </div>
-                        <div>
-                            <label asp-for="InputProduct.CategoryId">Categoría</label>
-                            <select asp-for="InputProduct.CategoryId" required>
-                                <option value="">Selecciona…</option>
-                                @foreach (var category in Model.Categories)
-                                {
-                                    <option value="@category.Id">@category.Name (@category.Slug)</option>
-                                }
-                            </select>
-                        </div>
-                    </div>
-                    <label asp-for="InputProduct.Name">Nombre</label>
-                    <input asp-for="InputProduct.Name" required maxlength="200" />
-                    <label asp-for="InputProduct.Slug">Slug (opcional)</label>
-                    <input asp-for="InputProduct.Slug" maxlength="220" placeholder="vino-reserva" />
-                    <label asp-for="InputProduct.Description">Descripción</label>
-                    <textarea asp-for="InputProduct.Description"></textarea>
-                    <div class="row">
-                        <div>
-                            <label asp-for="InputProduct.Price">Precio (€)</label>
-                            <input asp-for="InputProduct.Price" required placeholder="18,90" />
-                        </div>
-                        <div>
-                            <label asp-for="InputProduct.VatRate">IVA (%)</label>
-                            <input asp-for="InputProduct.VatRate" required />
-                        </div>
-                    </div>
-                    <label class="check"><input asp-for="InputProduct.Active" /> Activo en el catálogo público</label>
-                    <button type="submit">Guardar producto</button>
-                </form>
-            </section>
-        </div>
-        }
-        else
+        @if (!Model.CanWrite)
         {
             <p class="muted">Tu rol permite consultar el catálogo, no modificarlo.</p>
         }
 
         <section class="card" style="margin-bottom:22px">
-            <h2>Categorías (@Model.Categories.Count)</h2>
+            <div class="section-head">
+                <h2>Categorías (@Model.Categories.Count)</h2>
+                @if (Model.CanWrite)
+                {
+                    <button type="button" id="open-category">+ Nueva categoría</button>
+                }
+            </div>
             <table>
                 <thead>
                     <tr><th>Nombre</th><th>Slug</th><th>Padre</th><th>Estado</th></tr>
@@ -185,26 +147,41 @@
                 <h2>Productos (@Model.Products.Count)</h2>
                 @if (Model.CanWrite)
                 {
-                    <button type="button" id="open-import">Importar productos</button>
+                    <div class="section-actions">
+                        <button type="button" id="open-product">+ Nuevo producto</button>
+                        <button type="button" id="open-import">Importar productos</button>
+                    </div>
                 }
             </div>
-            <table>
+            <table class="products">
                 <thead>
-                    <tr><th>Referencia</th><th>Nombre</th><th>Tipo</th><th>Categoría</th><th>Precio</th><th>IVA</th><th>Estado</th><th>Actualizado</th><th>Imagen</th></tr>
+                    <tr>
+                        <th class="col-text">Referencia</th><th class="col-text">Nombre</th><th class="col-center">Tipo</th><th class="col-center">Categoría</th><th class="col-center">Precio</th><th class="col-center">IVA</th><th class="col-center">Stock</th><th class="col-center">Estado</th><th class="col-center">Actualizado</th>
+                        @if (Model.CanWrite)
+                        {
+                            <th class="col-center">Editar</th>
+                        }
+                        <th class="col-center">Imagen</th>
+                    </tr>
                 </thead>
                 <tbody>
                 @foreach (var product in Model.Products)
                 {
                     <tr>
-                        <td><code>@product.Reference</code></td>
-                        <td>@product.Name<br /><code>@product.Slug</code></td>
-                        <td>@IndexModel.KindLabel(product.Kind)</td>
-                        <td>@product.CategoryName</td>
-                        <td>@product.Price.ToString("N2") €</td>
-                        <td>@product.VatRate.ToString("N2") %</td>
-                        <td><span class="badge @(product.Active ? "on" : "off")">@(product.Active ? "Activo" : "Inactivo")</span></td>
-                        <td>@product.UpdatedAt.ToLocalTime().ToString("g")</td>
-                        <td>
+                        <td class="col-text"><code>@product.Reference</code></td>
+                        <td class="col-text">@product.Name<br /><code>@product.Slug</code></td>
+                        <td class="col-center">@IndexModel.KindLabel(product.Kind)</td>
+                        <td class="col-center">@product.CategoryName</td>
+                        <td class="col-center">@product.Price.ToString("N2") €</td>
+                        <td class="col-center">@product.VatRate.ToString("N2") %</td>
+                        <td class="col-center">@IndexModel.StockLabel(product)</td>
+                        <td class="col-center"><span class="badge @(product.Active ? "on" : "off")">@(product.Active ? "Activo" : "Inactivo")</span></td>
+                        <td class="col-center">@product.UpdatedAt.ToLocalTime().ToString("g")</td>
+                        @if (Model.CanWrite)
+                        {
+                            <td class="col-center"><button type="button" class="edit-button js-edit-product" data-url="@Url.Page(null, pageHandler: "EditProduct", new { productId = product.Id })">Editar</button></td>
+                        }
+                        <td class="col-center">
                             @{
                                 var hasImage = !string.IsNullOrWhiteSpace(product.PrimaryImageUrl);
                             }
@@ -274,6 +251,139 @@
     </div>
     @if (Model.CanWrite)
     {
+        <div id="category-modal" class="modal" hidden>
+            <div class="modal-card compact" role="dialog" aria-modal="true" aria-labelledby="category-title">
+                <div class="modal-bar">
+                    <strong id="category-title">Nueva categoría</strong>
+                    <button type="button" data-close-category aria-label="Cerrar">×</button>
+                </div>
+                <form id="category-form" method="post" asp-page-handler="CreateCategory">
+                    <p id="category-error" class="err-text form-error" hidden></p>
+                    <p class="muted">Si dejas el slug vacío se genera a partir del nombre.</p>
+                    <label asp-for="InputCategory.Name">Nombre</label>
+                    <input asp-for="InputCategory.Name" required maxlength="@CatalogLimits.CategoryNameMaxLength" />
+                    <label asp-for="InputCategory.Slug">Slug (opcional)</label>
+                    <input asp-for="InputCategory.Slug" maxlength="@CatalogLimits.CategorySlugMaxLength" placeholder="tintos" />
+                    <label asp-for="InputCategory.ParentCategoryId">Categoría padre</label>
+                    <select asp-for="InputCategory.ParentCategoryId">
+                        <option value="">Ninguna</option>
+                        @foreach (var category in Model.Categories)
+                        {
+                            <option value="@category.Id">@category.Name</option>
+                        }
+                    </select>
+                    <label class="check"><input asp-for="InputCategory.Active" /> Activa</label>
+                    <div class="modal-actions">
+                        <button type="button" class="quiet" data-close-category>Cancelar</button>
+                        <button type="submit" id="category-save">Crear categoría</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <div id="product-modal" class="modal" hidden>
+            <div class="modal-card edit-card" role="dialog" aria-modal="true" aria-labelledby="product-title">
+                <div class="modal-bar">
+                    <strong id="product-title">Nuevo producto</strong>
+                    <button type="button" data-close-product aria-label="Cerrar">×</button>
+                </div>
+                <form id="product-form" method="post" enctype="multipart/form-data" asp-page-handler="CreateProduct" data-candidates-url="@Url.Page(null, pageHandler: "ProductCandidates")">
+                    <p id="product-error" class="err-text form-error" hidden></p>
+                    <p class="muted">El listado público solo muestra productos y categorías activos.</p>
+                    <label for="create-kind">Tipo de producto</label>
+                    <select asp-for="InputProduct.Kind" id="create-kind">
+                        <option value="Standard">Estándar</option>
+                        <option value="Wine">Vino</option>
+                        <option value="Pack">Pack</option>
+                    </select>
+                    <h3 class="block-title">Datos generales</h3>
+                    <div class="row">
+                        <div>
+                            <label asp-for="InputProduct.Reference">Referencia</label>
+                            <input asp-for="InputProduct.Reference" required maxlength="@CatalogLimits.ProductReferenceMaxLength" placeholder="CRZ-002" />
+                        </div>
+                        <div>
+                            <label asp-for="InputProduct.CategoryId">Categoría</label>
+                            <select asp-for="InputProduct.CategoryId" required>
+                                <option value="">Selecciona…</option>
+                                @foreach (var category in Model.Categories)
+                                {
+                                    <option value="@category.Id">@category.Name (@category.Slug)</option>
+                                }
+                            </select>
+                        </div>
+                    </div>
+                    <label asp-for="InputProduct.Name">Nombre</label>
+                    <input asp-for="InputProduct.Name" required maxlength="@CatalogLimits.ProductNameMaxLength" />
+                    <label asp-for="InputProduct.Slug">Slug (opcional)</label>
+                    <input asp-for="InputProduct.Slug" maxlength="@CatalogLimits.ProductSlugMaxLength" placeholder="vino-reserva" />
+                    <label asp-for="InputProduct.Description">Descripción</label>
+                    <textarea asp-for="InputProduct.Description" maxlength="@CatalogLimits.ProductDescriptionMaxLength"></textarea>
+                    <div class="row">
+                        <div>
+                            <label asp-for="InputProduct.Price">Precio (€)</label>
+                            <input asp-for="InputProduct.Price" required maxlength="16" inputmode="decimal" placeholder="18,90" />
+                        </div>
+                        <div>
+                            <label asp-for="InputProduct.VatRate">IVA (%)</label>
+                            <input asp-for="InputProduct.VatRate" required maxlength="6" inputmode="decimal" />
+                        </div>
+                    </div>
+                    <label class="check"><input asp-for="InputProduct.Active" /> Activo en el catálogo público</label>
+                    <div id="create-wine" hidden>
+                        <h3 class="block-title">Datos del vino</h3>
+                        <div class="row">
+                            <div>
+                                <label asp-for="InputProduct.Vintage">Añada</label>
+                                <input asp-for="InputProduct.Vintage" maxlength="@CatalogLimits.WineVintageMaxLength" />
+                            </div>
+                            <div>
+                                <label asp-for="InputProduct.Grape">Uva</label>
+                                <input asp-for="InputProduct.Grape" maxlength="@CatalogLimits.WineGrapeMaxLength" />
+                            </div>
+                        </div>
+                        <label asp-for="InputProduct.Alcohol">Graduación alcohólica (%)</label>
+                        <input asp-for="InputProduct.Alcohol" maxlength="6" inputmode="decimal" placeholder="13,50" />
+                    </div>
+                    <div id="create-inventory">
+                        <h3 class="block-title">Inventario</h3>
+                        <div id="create-stock">
+                            <label asp-for="InputProduct.InitialStock">Stock inicial</label>
+                            <input asp-for="InputProduct.InitialStock" type="number" inputmode="numeric" min="0" max="@InventoryLimits.MaxStockQuantity" step="1" />
+                        </div>
+                        <p id="create-derived" class="derived-note" hidden>Stock: <strong>Derivado</strong></p>
+                    </div>
+                    <div id="create-pack" hidden>
+                        <h3 class="block-title">Composición del pack</h3>
+                        <div class="component-head">
+                            <span>Producto</span>
+                            <span>Cantidad</span>
+                            <span></span>
+                        </div>
+                        <div id="create-components"></div>
+                        <button type="button" id="create-add-component">+ Añadir producto</button>
+                        <input type="hidden" asp-for="InputProduct.ComponentsJson" id="create-components-json" />
+                    </div>
+                    <div id="create-image">
+                        <h3 class="block-title">Imagen principal</h3>
+                        <input id="create-image-file" class="image-file" type="file" name="primaryImage" accept="image/jpeg,image/png,image/webp" />
+                        <div id="create-image-empty">
+                            <button type="button" id="create-image-pick">Seleccionar imagen</button>
+                        </div>
+                        <div id="create-image-chosen" hidden>
+                            <img id="create-image-preview" class="create-image-preview" alt="Imagen seleccionada" />
+                            <div class="create-image-actions">
+                                <button type="button" id="create-image-change">Cambiar</button>
+                                <button type="button" id="create-image-clear">Quitar</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-actions">
+                        <button type="button" class="quiet" data-close-product>Cancelar</button>
+                        <button type="submit" id="product-save">Crear producto</button>
+                    </div>
+                </form>
+            </div>
+        </div>
         <div id="import-modal" class="modal" hidden>
             <div class="modal-card compact" role="dialog" aria-modal="true" aria-labelledby="import-title">
                 <div class="modal-bar">
@@ -292,6 +402,83 @@
                         <button type="button" class="quiet" data-close-import>Cerrar</button>
                         <button type="button" id="import-validate">Validar</button>
                         <button type="button" id="import-confirm" hidden>Importar productos</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    }
+    @if (Model.CanWrite)
+    {
+        <div id="edit-modal" class="modal" hidden>
+            <div class="modal-card edit-card" role="dialog" aria-modal="true" aria-labelledby="edit-title">
+                <div class="modal-bar">
+                    <strong id="edit-title">Editar producto</strong>
+                    <button type="button" data-close-edit aria-label="Cerrar">×</button>
+                </div>
+                <p id="edit-loading" class="muted">Cargando la ficha…</p>
+                <p id="edit-error" class="err-text form-error" hidden></p>
+                <form id="edit-form" novalidate hidden data-save-url="@Url.Page(null, pageHandler: "EditProduct")">
+                    <p class="kind-line">Tipo: <strong id="edit-kind"></strong></p>
+                    <div class="row">
+                        <div>
+                            <label for="edit-reference">Referencia</label>
+                            <input id="edit-reference" maxlength="@CatalogLimits.ProductReferenceMaxLength" />
+                        </div>
+                        <div>
+                            <label for="edit-category">Categoría</label>
+                            <select id="edit-category">
+                                <option value="">Selecciona…</option>
+                                @foreach (var category in Model.Categories)
+                                {
+                                    <option value="@category.Id">@category.Name (@category.Slug)</option>
+                                }
+                            </select>
+                        </div>
+                    </div>
+                    <label for="edit-name">Nombre</label>
+                    <input id="edit-name" maxlength="@CatalogLimits.ProductNameMaxLength" />
+                    <label for="edit-slug">Slug (opcional)</label>
+                    <input id="edit-slug" maxlength="@CatalogLimits.ProductSlugMaxLength" />
+                    <label for="edit-description">Descripción</label>
+                    <textarea id="edit-description" maxlength="@CatalogLimits.ProductDescriptionMaxLength"></textarea>
+                    <div class="row">
+                        <div>
+                            <label for="edit-price">Precio (€)</label>
+                            <input id="edit-price" maxlength="16" inputmode="decimal" />
+                        </div>
+                        <div>
+                            <label for="edit-vat">IVA (%)</label>
+                            <input id="edit-vat" maxlength="6" inputmode="decimal" />
+                        </div>
+                    </div>
+                    <div id="edit-wine" hidden>
+                        <div class="row">
+                            <div>
+                                <label for="edit-vintage">Añada</label>
+                                <input id="edit-vintage" maxlength="@CatalogLimits.WineVintageMaxLength" />
+                            </div>
+                            <div>
+                                <label for="edit-grape">Uva</label>
+                                <input id="edit-grape" maxlength="@CatalogLimits.WineGrapeMaxLength" />
+                            </div>
+                        </div>
+                        <label for="edit-alcohol">Grado alcohólico (%)</label>
+                        <input id="edit-alcohol" maxlength="6" inputmode="decimal" />
+                    </div>
+                    <div id="edit-stock" hidden>
+                        <label for="edit-stock-input">Stock actual</label>
+                        <input id="edit-stock-input" type="number" inputmode="numeric" min="0" max="@InventoryLimits.MaxStockQuantity" step="1" />
+                    </div>
+                    <div id="edit-pack" hidden>
+                        <p class="kind-line">Stock: <strong>Derivado</strong></p>
+                        <label>Composición</label>
+                        <div id="edit-components"></div>
+                        <button type="button" id="edit-add-component">Añadir componente</button>
+                    </div>
+                    <label class="check"><input id="edit-active" type="checkbox" /> Activo en el catálogo público</label>
+                    <div class="modal-actions">
+                        <button type="button" class="quiet" data-close-edit>Cancelar</button>
+                        <button type="submit" id="edit-save">Guardar</button>
                     </div>
                 </form>
             </div>
@@ -367,13 +554,269 @@
                 if (event.target === preview) closePreview();
             });
             const importModal = document.getElementById('import-modal');
+            const editModal = document.getElementById('edit-modal');
+            let editBusy = false;
             function closeImport() {
                 if (importModal) importModal.hidden = true;
+            }
+            function closeEdit() {
+                if (editBusy || !editModal) return;
+                editModal.hidden = true;
+            }
+
+            function bindWriteModal(config) {
+                const modal = document.getElementById(config.id);
+                if (!modal) return null;
+                const form = modal.querySelector('form');
+                const error = document.getElementById(config.errorId);
+                const submit = form.querySelector('[type="submit"]');
+                let busy = false;
+
+                function showError(message) {
+                    error.textContent = message || '';
+                    error.hidden = !message;
+                }
+
+                function closeModal() {
+                    if (busy) return;
+                    modal.hidden = true;
+                    form.reset();
+                    showError('');
+                    if (config.onReset) config.onReset();
+                }
+
+                document.getElementById(config.openId).addEventListener('click', function () {
+                    if (busy) return;
+                    form.reset();
+                    showError('');
+                    if (config.onReset) config.onReset();
+                    if (config.onOpen) config.onOpen();
+                    modal.hidden = false;
+                    const field = form.querySelector('[name="' + config.focusName + '"]');
+                    if (field) field.focus();
+                });
+                modal.querySelectorAll(config.closeSelector).forEach(function (element) {
+                    element.addEventListener('click', closeModal);
+                });
+                modal.addEventListener('click', function (event) {
+                    if (event.target === modal) closeModal();
+                });
+                form.addEventListener('submit', function (event) {
+                    event.preventDefault();
+                    if (busy) return;
+                    if (config.beforeSubmit) config.beforeSubmit();
+                    busy = true;
+                    submit.disabled = true;
+                    showError('');
+                    fetch(form.action, {
+                        method: 'POST',
+                        body: new FormData(form),
+                        credentials: 'same-origin',
+                        headers: { 'Accept': 'application/json' }
+                    })
+                        .then(function (response) {
+                            return response.json().then(function (data) {
+                                return { ok: response.ok, data: data };
+                            }).catch(function () {
+                                return { ok: false, data: null };
+                            });
+                        })
+                        .then(function (result) {
+                            if (result.ok && result.data && result.data.ok) {
+                                window.location.assign(window.location.pathname);
+                                return;
+                            }
+                            busy = false;
+                            submit.disabled = false;
+                            showError((result.data && result.data.message) || config.fallback);
+                        })
+                        .catch(function () {
+                            busy = false;
+                            submit.disabled = false;
+                            showError(config.fallback);
+                        });
+                });
+
+                return {
+                    close: closeModal,
+                    isOpen: function () { return !modal.hidden; }
+                };
+            }
+
+            const categoryModal = bindWriteModal({
+                id: 'category-modal',
+                openId: 'open-category',
+                errorId: 'category-error',
+                focusName: 'InputCategory.Name',
+                closeSelector: '[data-close-category]',
+                fallback: 'No se ha podido crear la categoría.'
+            });
+            const productForm = document.getElementById('product-form');
+            let createCandidates = null;
+            let createCandidatesRequest = null;
+
+            function syncCreateKind() {
+                if (!productForm) return;
+                const kind = document.getElementById('create-kind').value;
+                document.getElementById('create-wine').hidden = kind !== 'Wine';
+                document.getElementById('create-stock').hidden = kind === 'Pack';
+                document.getElementById('create-derived').hidden = kind !== 'Pack';
+                document.getElementById('create-pack').hidden = kind !== 'Pack';
+                const stockInput = document.querySelector('#create-stock input');
+                if (stockInput) stockInput.disabled = kind === 'Pack';
+            }
+
+            function candidateLabel(candidate) {
+                const label = candidate.reference + ' — ' + candidate.name;
+                return candidate.active ? label : label + ' (inactivo)';
+            }
+
+            function ensureCreateCandidates() {
+                if (createCandidates) return Promise.resolve(createCandidates);
+                if (createCandidatesRequest) return createCandidatesRequest;
+                createCandidatesRequest = fetch(productForm.getAttribute('data-candidates-url'), {
+                    credentials: 'same-origin',
+                    headers: { 'Accept': 'application/json' }
+                }).then(function (response) {
+                    if (!response.ok) throw new Error();
+                    return response.json();
+                }).then(function (data) {
+                    createCandidates = (Array.isArray(data) ? data : []).filter(function (candidate) {
+                        return candidate.kind === 'Standard' || candidate.kind === 'Wine';
+                    });
+                    createCandidatesRequest = null;
+                    return createCandidates;
+                }).catch(function (error) {
+                    createCandidatesRequest = null;
+                    throw error;
+                });
+                return createCandidatesRequest;
+            }
+
+            function addCreateComponentRow(productId, quantity) {
+                const row = document.createElement('div');
+                row.className = 'component-row';
+                const select = document.createElement('select');
+                (createCandidates || []).forEach(function (candidate) {
+                    const option = document.createElement('option');
+                    option.value = candidate.id;
+                    option.textContent = candidateLabel(candidate);
+                    if (candidate.id === productId) option.selected = true;
+                    select.appendChild(option);
+                });
+                if (productId) select.value = productId;
+                const quantityInput = document.createElement('input');
+                quantityInput.type = 'number';
+                quantityInput.inputMode = 'numeric';
+                quantityInput.value = String(quantity || 1);
+                const remove = document.createElement('button');
+                remove.type = 'button';
+                remove.textContent = 'Eliminar';
+                remove.addEventListener('click', function () {
+                    row.remove();
+                });
+                row.appendChild(select);
+                row.appendChild(quantityInput);
+                row.appendChild(remove);
+                document.getElementById('create-components').appendChild(row);
+            }
+
+            function clearCreateImage() {
+                const input = document.getElementById('create-image-file');
+                const preview = document.getElementById('create-image-preview');
+                const empty = document.getElementById('create-image-empty');
+                const chosen = document.getElementById('create-image-chosen');
+                if (!input || !preview || !empty || !chosen) return;
+                input.value = '';
+                preview.removeAttribute('src');
+                empty.hidden = false;
+                chosen.hidden = true;
+            }
+
+            function showCreateImage(file) {
+                const reader = new FileReader();
+                reader.onload = function () {
+                    document.getElementById('create-image-preview').src = reader.result;
+                    document.getElementById('create-image-empty').hidden = true;
+                    document.getElementById('create-image-chosen').hidden = false;
+                };
+                reader.readAsDataURL(file);
+            }
+
+            function writeCreateComponents() {
+                const rows = Array.from(document.querySelectorAll('#create-components .component-row')).map(function (row) {
+                    return {
+                        productId: row.querySelector('select').value,
+                        quantity: Number(row.querySelector('input').value)
+                    };
+                });
+                document.getElementById('create-components-json').value = JSON.stringify(rows);
+            }
+
+            const productModal = bindWriteModal({
+                id: 'product-modal',
+                openId: 'open-product',
+                errorId: 'product-error',
+                focusName: 'InputProduct.Kind',
+                closeSelector: '[data-close-product]',
+                fallback: 'No se ha podido crear el producto.',
+                onReset: function () {
+                    const list = document.getElementById('create-components');
+                    if (list) list.replaceChildren();
+                    syncCreateKind();
+                    clearCreateImage();
+                },
+                onOpen: function () {
+                    ensureCreateCandidates().catch(function () {
+                        createCandidates = null;
+                    });
+                },
+                beforeSubmit: writeCreateComponents
+            });
+
+            if (productForm) {
+                const createImageInput = document.getElementById('create-image-file');
+                document.getElementById('create-image-pick').addEventListener('click', function () {
+                    createImageInput.click();
+                });
+                document.getElementById('create-image-change').addEventListener('click', function () {
+                    createImageInput.click();
+                });
+                document.getElementById('create-image-clear').addEventListener('click', clearCreateImage);
+                createImageInput.addEventListener('change', function () {
+                    const file = createImageInput.files && createImageInput.files[0];
+                    if (!file) return;
+                    showCreateImage(file);
+                });
+                document.getElementById('create-kind').addEventListener('change', syncCreateKind);
+                document.getElementById('create-add-component').addEventListener('click', function () {
+                    const error = document.getElementById('product-error');
+                    ensureCreateCandidates().then(function (candidates) {
+                        if (!candidates.length) {
+                            error.textContent = 'No hay productos disponibles para componer el pack.';
+                            error.hidden = false;
+                            return;
+                        }
+                        const used = Array.from(document.querySelectorAll('#create-components select')).map(function (select) {
+                            return select.value;
+                        });
+                        const next = candidates.find(function (candidate) {
+                            return used.indexOf(candidate.id) === -1;
+                        }) || candidates[0];
+                        addCreateComponentRow(next.id, 1);
+                    }).catch(function () {
+                        error.textContent = 'No se han podido cargar los productos del catálogo.';
+                        error.hidden = false;
+                    });
+                });
             }
 
             document.addEventListener('keydown', function (event) {
                 if (event.key !== 'Escape') return;
                 if (!preview.hidden) { closePreview(); return; }
+                if (editModal && !editModal.hidden) { closeEdit(); return; }
+                if (productModal && productModal.isOpen()) { productModal.close(); return; }
+                if (categoryModal && categoryModal.isOpen()) { categoryModal.close(); return; }
                 if (importModal && !importModal.hidden) { closeImport(); return; }
                 if (!lightbox.hidden) closeLightbox();
             });
@@ -496,6 +939,225 @@
 
                 function countLine(value, singular, plural) {
                     return value + ' ' + (value === 1 ? singular : plural);
+                }
+            }
+
+            if (editModal) {
+                const editForm = document.getElementById('edit-form');
+                const editError = document.getElementById('edit-error');
+                const editLoading = document.getElementById('edit-loading');
+                const editKind = document.getElementById('edit-kind');
+                const editWine = document.getElementById('edit-wine');
+                const editStock = document.getElementById('edit-stock');
+                const editPack = document.getElementById('edit-pack');
+                const editComponents = document.getElementById('edit-components');
+                const editSave = document.getElementById('edit-save');
+                let opened = null;
+
+                function showEditError(message) {
+                    editError.textContent = message;
+                    editError.hidden = !message;
+                }
+
+                function closeEditNow() {
+                    if (editBusy) return;
+                    editModal.hidden = true;
+                }
+
+                document.querySelectorAll('[data-close-edit]').forEach(function (element) {
+                    element.addEventListener('click', closeEditNow);
+                });
+                editModal.addEventListener('click', function (event) {
+                    if (event.target === editModal) closeEditNow();
+                });
+
+                document.querySelectorAll('.js-edit-product').forEach(function (button) {
+                    button.addEventListener('click', function () {
+                        openEditor(button.getAttribute('data-url'));
+                    });
+                });
+
+                document.getElementById('edit-add-component').addEventListener('click', function () {
+                    if (!opened) return;
+                    const used = selectedComponentIds();
+                    const available = opened.candidates.find(function (candidate) {
+                        return used.indexOf(candidate.productId) === -1;
+                    });
+                    if (!available) {
+                        showEditError('No quedan productos para añadir.');
+                        return;
+                    }
+                    showEditError('');
+                    addComponentRow(available.productId, 1);
+                });
+
+                editForm.addEventListener('submit', function (event) {
+                    event.preventDefault();
+                    saveEditor();
+                });
+
+                function openEditor(url) {
+                    opened = null;
+                    editBusy = false;
+                    editSave.disabled = false;
+                    editForm.hidden = true;
+                    editLoading.hidden = false;
+                    showEditError('');
+                    editModal.hidden = false;
+                    fetch(url, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+                        .then(function (response) {
+                            return response.json().then(function (data) {
+                                return { ok: response.ok, data: data };
+                            });
+                        })
+                        .then(function (result) {
+                            if (!result.ok) {
+                                editLoading.hidden = true;
+                                showEditError((result.data && result.data.message) || 'No se ha podido abrir el producto.');
+                                return;
+                            }
+                            fillEditor(result.data);
+                        })
+                        .catch(function () {
+                            editLoading.hidden = true;
+                            showEditError('No se ha podido abrir el producto.');
+                        });
+                }
+
+                function fillEditor(data) {
+                    opened = {
+                        id: data.id,
+                        kind: data.kind,
+                        revision: data.fichaRevision,
+                        stock: data.stock,
+                        candidates: data.candidates || []
+                    };
+                    document.getElementById('edit-title').textContent = data.name || 'Editar producto';
+                    editKind.textContent = data.kind || '';
+                    document.getElementById('edit-reference').value = data.reference || '';
+                    document.getElementById('edit-name').value = data.name || '';
+                    document.getElementById('edit-slug').value = data.slug || '';
+                    document.getElementById('edit-description').value = data.description || '';
+                    document.getElementById('edit-category').value = data.categoryId || '';
+                    document.getElementById('edit-price').value = data.price || '';
+                    document.getElementById('edit-vat').value = data.vatRate || '';
+                    document.getElementById('edit-active').checked = !!data.active;
+                    const isWine = data.kind === 'Vino';
+                    const isPack = data.kind === 'Pack';
+                    editWine.hidden = !isWine;
+                    editStock.hidden = isPack;
+                    editPack.hidden = !isPack;
+                    document.getElementById('edit-vintage').value = data.vintage || '';
+                    document.getElementById('edit-grape').value = data.grape || '';
+                    document.getElementById('edit-alcohol').value = data.alcohol || '';
+                    document.getElementById('edit-stock-input').value = data.stock == null ? '' : String(data.stock);
+                    editComponents.replaceChildren();
+                    if (isPack) {
+                        (data.components || []).forEach(function (component) {
+                            addComponentRow(component.productId, component.quantity);
+                        });
+                    }
+                    editLoading.hidden = true;
+                    editForm.hidden = false;
+                }
+
+                function addComponentRow(productId, quantity) {
+                    const row = document.createElement('div');
+                    row.className = 'component-row';
+                    const select = document.createElement('select');
+                    (opened.candidates || []).forEach(function (candidate) {
+                        const option = document.createElement('option');
+                        option.value = candidate.productId;
+                        option.textContent = candidate.label;
+                        if (candidate.productId === productId) option.selected = true;
+                        select.appendChild(option);
+                    });
+                    if (productId) select.value = productId;
+                    const quantityInput = document.createElement('input');
+                    quantityInput.type = 'number';
+                    quantityInput.min = '1';
+                    quantityInput.step = '1';
+                    quantityInput.value = String(quantity || 1);
+                    const remove = document.createElement('button');
+                    remove.type = 'button';
+                    remove.className = 'quiet';
+                    remove.textContent = 'Quitar';
+                    remove.addEventListener('click', function () {
+                        row.remove();
+                    });
+                    row.appendChild(select);
+                    row.appendChild(quantityInput);
+                    row.appendChild(remove);
+                    editComponents.appendChild(row);
+                }
+
+                function selectedComponentIds() {
+                    return Array.from(editComponents.querySelectorAll('select')).map(function (select) {
+                        return select.value;
+                    });
+                }
+
+                function saveEditor() {
+                    if (!opened || editBusy) return;
+                    const tokenInput = document.querySelector('#page-antiforgery input[name="__RequestVerificationToken"]');
+                    if (!tokenInput) {
+                        showEditError('No se ha podido guardar el producto.');
+                        return;
+                    }
+                    const body = new FormData();
+                    body.append('__RequestVerificationToken', tokenInput.value);
+                    body.append('productId', opened.id);
+                    body.append('fichaRevision', opened.revision);
+                    body.append('reference', document.getElementById('edit-reference').value);
+                    body.append('name', document.getElementById('edit-name').value);
+                    body.append('slug', document.getElementById('edit-slug').value);
+                    body.append('description', document.getElementById('edit-description').value);
+                    body.append('categoryId', document.getElementById('edit-category').value);
+                    body.append('price', document.getElementById('edit-price').value);
+                    body.append('vatRate', document.getElementById('edit-vat').value);
+                    body.append('active', document.getElementById('edit-active').checked ? 'true' : 'false');
+                    if (opened.kind === 'Pack') {
+                        const components = Array.from(editComponents.querySelectorAll('.component-row')).map(function (row) {
+                            return {
+                                productId: row.querySelector('select').value,
+                                quantity: Number(row.querySelector('input').value)
+                            };
+                        });
+                        body.append('componentsJson', JSON.stringify(components));
+                    } else {
+                        body.append('loadedStock', opened.stock == null ? '' : String(opened.stock));
+                        body.append('stock', document.getElementById('edit-stock-input').value);
+                    }
+                    if (opened.kind === 'Vino') {
+                        body.append('vintage', document.getElementById('edit-vintage').value);
+                        body.append('grape', document.getElementById('edit-grape').value);
+                        body.append('alcohol', document.getElementById('edit-alcohol').value);
+                    }
+                    editBusy = true;
+                    editSave.disabled = true;
+                    showEditError('');
+                    fetch(editForm.getAttribute('data-save-url'), { method: 'POST', body: body, credentials: 'same-origin' })
+                        .then(function (response) {
+                            return response.json().then(function (data) {
+                                return { ok: response.ok, data: data };
+                            }).catch(function () {
+                                return { ok: false, data: null };
+                            });
+                        })
+                        .then(function (result) {
+                            if (result.ok && result.data && result.data.ok) {
+                                window.location.assign(window.location.pathname);
+                                return;
+                            }
+                            editBusy = false;
+                            editSave.disabled = false;
+                            showEditError((result.data && result.data.message) || 'No se ha podido guardar el producto.');
+                        })
+                        .catch(function () {
+                            editBusy = false;
+                            editSave.disabled = false;
+                            showEditError('No se ha podido guardar el producto.');
+                        });
                 }
             }
         })();
