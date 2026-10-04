@@ -5,6 +5,8 @@ export interface Category {
   description: string;
 }
 
+export type ProductKindName = 'Standard' | 'Wine' | 'Pack';
+
 export interface Product {
   id: string;
   reference: string;
@@ -15,12 +17,21 @@ export interface Product {
   categorySlug: string;
   categoryName: string;
   price: number;
+  kind: ProductKindName;
   vintage: string;
   grape: string;
   alcohol: string;
   image: string;
   accent: string;
   featured?: boolean;
+}
+
+export interface PackComponent {
+  productId: string;
+  name: string;
+  description: string;
+  image: string | null;
+  quantity: number;
 }
 
 export interface CartItem {

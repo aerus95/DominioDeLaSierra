@@ -4,7 +4,6 @@ import { RouterLink } from '@angular/router';
 import { CartFeedbackService } from '../core/cart-feedback.service';
 import { ModalFocusDirective } from './modal-focus.directive';
 import { Product } from '../core/models';
-import { CatalogService } from '../core/catalog.service';
 
 @Component({
   selector: 'ds-product-card', standalone: true, imports: [RouterLink, DecimalPipe, ModalFocusDirective],
@@ -19,9 +18,9 @@ import { CatalogService } from '../core/catalog.service';
   `
 })
 export class ProductCardComponent {
-  private readonly catalog = inject(CatalogService);
   private readonly feedback = inject(CartFeedbackService);
   readonly product = input.required<Product>();
+  readonly neighbors = input<Product[]>([]);
   readonly addToCart = output<Product>();
   readonly quickProduct = signal<Product | null>(null);
   readonly quickImage = signal(0);
@@ -35,10 +34,11 @@ export class ProductCardComponent {
   closeQuickView(): void { this.quickProduct.set(null); }
   changeProduct(delta: number): void {
     const current = this.quickProduct();
-    if (!current || !this.catalog.products().length) return;
-    const products = this.catalog.products();
+    const products = this.neighbors();
+    if (!current || products.length === 0) return;
     const index = products.findIndex((product) => product.id === current.id);
-    this.quickProduct.set(products[(index + delta + products.length) % products.length]);
+    const next = index < 0 ? 0 : (index + delta + products.length) % products.length;
+    this.quickProduct.set(products[next]);
     this.quickImage.set(0);
   }
 

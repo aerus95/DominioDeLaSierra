@@ -11,4 +11,5 @@ public sealed record ProductListItemDto(
     Guid CategoryId,
     string CategoryName,
     string CategorySlug,
-    string? PrimaryImageUrl);
+    string? PrimaryImageUrl,
+    string Kind);

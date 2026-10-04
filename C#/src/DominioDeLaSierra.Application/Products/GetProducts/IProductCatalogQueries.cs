@@ -11,4 +11,8 @@ public interface IProductCatalogQueries
     Task<ProductListItemDto?> GetProductBySlugAsync(
         GetProductBySlugQuery query,
         CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<PackComponentDto>?> GetPackComponentsAsync(
+        GetPackComponentsQuery query,
+        CancellationToken cancellationToken = default);
 }

@@ -1039,3 +1039,19 @@ ds-location-map { display:block; }
   .cart-line .cart-line-image { width: 72px; }
 }
 
+.pack-panel { grid-column: 1 / -1; min-width: 0; padding-top: .35rem; }
+.pack-toggle { border: 0; background: transparent; padding: 0; color: var(--wine); font-size: .78rem; letter-spacing: .04em; text-decoration: underline; cursor: pointer; }
+.pack-contents { display: grid; gap: .85rem; margin-top: .85rem; padding-top: .85rem; border-top: 1px solid var(--line); }
+.pack-component { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: .9rem; align-items: start; }
+.cart-line .pack-component-image,
+.cart-line .pack-component-placeholder { display: block; width: 72px; height: 72px; padding: 6px; object-fit: contain; object-position: center; background: #eee8df; border-radius: 10px; box-sizing: border-box; }
+.pack-component h4 { margin: 0; font-size: 1rem; }
+.pack-component p { margin: .25rem 0 0; color: var(--muted); font-size: .85rem; }
+.pack-component small { display: block; margin-top: .4rem; font-size: .75rem; }
+.pack-contents-note { margin: .2rem 0 0; color: var(--muted); font-size: .82rem; }
+@media (max-width: 560px) {
+  .pack-component { grid-template-columns: 56px minmax(0, 1fr); gap: .7rem; }
+  .cart-line .pack-component-image,
+  .cart-line .pack-component-placeholder { width: 56px; height: 56px; }
+}
+

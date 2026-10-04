@@ -1,5 +1,6 @@
 using DominioDeLaSierra.Application.Common;
 using DominioDeLaSierra.Application.Products.GetProducts;
+using DominioDeLaSierra.Domain;
 using DominioDeLaSierra.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -46,7 +47,12 @@ public sealed class ProductCatalogQueries(ApplicationDbContext dbContext) : IPro
             : (int)Math.Ceiling(totalItems / (double)query.PageSize);
 
         var items = await products
-            .OrderBy(product => product.Name)
+            .OrderBy(product => product.Kind == ProductKind.Wine
+                ? 0
+                : product.Kind == ProductKind.Pack
+                    ? 1
+                    : 2)
+            .ThenBy(product => product.Price)
             .ThenBy(product => product.Reference)
             .Skip((query.Page - 1) * query.PageSize)
             .Take(query.PageSize)
@@ -61,7 +67,8 @@ public sealed class ProductCatalogQueries(ApplicationDbContext dbContext) : IPro
                 product.CategoryId,
                 product.Category.Name,
                 product.Category.Slug,
-                product.PrimaryImageUrl))
+                product.PrimaryImageUrl,
+                product.Kind == ProductKind.Wine ? "Wine" : product.Kind == ProductKind.Pack ? "Pack" : "Standard"))
             .ToListAsync(cancellationToken);
 
         return new PagedResult<ProductListItemDto>(
@@ -92,7 +99,44 @@ public sealed class ProductCatalogQueries(ApplicationDbContext dbContext) : IPro
                 product.CategoryId,
                 product.Category.Name,
                 product.Category.Slug,
-                product.PrimaryImageUrl))
+                product.PrimaryImageUrl,
+                product.Kind == ProductKind.Wine ? "Wine" : product.Kind == ProductKind.Pack ? "Pack" : "Standard"))
             .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<PackComponentDto>?> GetPackComponentsAsync(
+        GetPackComponentsQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        var pack = await dbContext.Products
+            .AsNoTracking()
+            .Where(product => product.Active)
+            .Where(product => product.Category.Active)
+            .Where(product => product.Slug == query.Slug)
+            .Select(product => new { product.Id, product.Kind })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (pack is null)
+        {
+            return null;
+        }
+
+        if (pack.Kind != ProductKind.Pack)
+        {
+            return [];
+        }
+
+        return await dbContext.ProductComponents
+            .AsNoTracking()
+            .Where(component => component.PackProductId == pack.Id)
+            .OrderBy(component => component.ComponentProduct.Name)
+            .ThenBy(component => component.ComponentProduct.Reference)
+            .Select(component => new PackComponentDto(
+                component.ComponentProductId,
+                component.ComponentProduct.Name,
+                component.ComponentProduct.Description,
+                component.ComponentProduct.PrimaryImageUrl,
+                component.Quantity))
+            .ToListAsync(cancellationToken);
     }
 }

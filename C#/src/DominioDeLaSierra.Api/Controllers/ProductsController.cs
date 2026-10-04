@@ -57,6 +57,29 @@ public sealed class ProductsController(
         }
     }
 
+    [HttpGet("{slug}/components")]
+    public async Task<ActionResult<IReadOnlyList<PackComponentDto>>> GetComponents(
+        string slug,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var components = await productCatalogQueries.GetPackComponentsAsync(
+                GetPackComponentsQuery.Create(slug),
+                cancellationToken);
+            if (components is null)
+            {
+                return NotFound(new { error = "Product not found." });
+            }
+
+            return Ok(components);
+        }
+        catch (ArgumentException exception)
+        {
+            return BadRequest(new { error = exception.Message });
+        }
+    }
+
     [Authorize(Policy = AdminAuthOptions.WritePolicy)]
     [HttpPost]
     public async Task<ActionResult<CreatedProductDto>> Post(

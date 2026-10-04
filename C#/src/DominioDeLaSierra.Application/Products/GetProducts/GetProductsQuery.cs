@@ -8,7 +8,7 @@ public sealed record GetProductsQuery(
     decimal? MinPrice,
     decimal? MaxPrice)
 {
-    public const int DefaultPageSize = 24;
+    public const int DefaultPageSize = 12;
     public const int MaxPageSize = 100;
 
     public static GetProductsQuery Create(
