@@ -9,9 +9,15 @@ public sealed class CategoryCatalogQueries(ApplicationDbContext dbContext) : ICa
     public async Task<IReadOnlyList<CategoryListItemDto>> GetCategoriesAsync(
         CancellationToken cancellationToken = default)
     {
+        var visibleCategoryIds = await PublicCategoryVisibility.GetVisibleIdsAsync(dbContext, cancellationToken);
+        if (visibleCategoryIds.Count == 0)
+        {
+            return [];
+        }
+
         return await dbContext.Categories
             .AsNoTracking()
-            .Where(category => category.Active)
+            .Where(category => visibleCategoryIds.Contains(category.Id))
             .OrderBy(category => category.Name)
             .Select(category => new CategoryListItemDto(
                 category.Id,

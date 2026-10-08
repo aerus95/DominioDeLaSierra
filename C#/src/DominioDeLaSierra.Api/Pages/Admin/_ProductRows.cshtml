@@ -1,0 +1,60 @@
+@model IndexModel
+@if (Model.ProductResults.TotalCount == 0)
+{
+    <tr><td class="empty-row" colspan="@(Model.CanWrite ? 11 : 10)">Ningún producto coincide con los filtros.</td></tr>
+}
+@foreach (var product in Model.ProductResults.Items)
+{
+    <tr>
+        <td class="col-text"><code>@product.Reference</code></td>
+        <td class="col-text">@product.Name<br /><code>@product.Slug</code></td>
+        <td class="col-center">@IndexModel.KindLabel(product.Kind)</td>
+        <td class="col-center">@product.CategoryName</td>
+        <td class="col-center">@product.Price.ToString("N2") €</td>
+        <td class="col-center">@product.VatRate.ToString("N2") %</td>
+        <td class="col-center">@IndexModel.StockLabel(product)</td>
+        <td class="col-center"><span class="badge @(product.Active ? "on" : "off")">@(product.Active ? "Activo" : "Inactivo")</span></td>
+        <td class="col-center">@product.UpdatedAt.ToLocalTime().ToString("g")</td>
+        @if (Model.CanWrite)
+        {
+            <td class="col-center"><button type="button" class="edit-button js-edit-product" data-url="@Url.Page(null, pageHandler: "EditProduct", new { productId = product.Id })">Editar</button></td>
+        }
+        <td class="col-center">
+            @{
+                var hasImage = !string.IsNullOrWhiteSpace(product.PrimaryImageUrl);
+            }
+            <div class="image-cell">
+                @if (hasImage)
+                {
+                    <button type="button" class="thumb-button" data-open-lightbox data-full="@product.PrimaryImageUrl" data-alt="@product.Name">
+                        <img class="thumb" src="@product.PrimaryImageUrl" alt="" width="64" height="64" />
+                    </button>
+                }
+                else
+                {
+                    <div class="thumb-frame thumb-empty">Sin imagen</div>
+                }
+                @if (Model.CanWrite)
+                {
+                    <div class="image-actions">
+                        <button type="button" class="js-pick-image" data-form="image-form-@product.Id" title="@(hasImage ? "Cambiar imagen" : "Subir imagen")" aria-label="@(hasImage ? "Cambiar imagen" : "Subir imagen")">@(hasImage ? "Cambiar" : "Subir")</button>
+                        @if (hasImage)
+                        {
+                            <form method="post" asp-page-handler="DeletePrimaryImage" asp-all-route-data="Model.CatalogRoutes" onsubmit="return confirm('¿Eliminar la imagen de este producto?');">
+                                <input type="hidden" name="imageProductId" value="@product.Id" />
+                                <button class="danger" type="submit" title="Eliminar imagen" aria-label="Eliminar imagen">Eliminar</button>
+                            </form>
+                        }
+                    </div>
+                }
+            </div>
+            @if (Model.CanWrite)
+            {
+                <form id="image-form-@product.Id" class="js-image-form" method="post" asp-page-handler="SetPrimaryImage" asp-all-route-data="Model.CatalogRoutes" enctype="multipart/form-data">
+                    <input type="hidden" name="imageProductId" value="@product.Id" />
+                    <input class="image-file" type="file" name="primaryImage" accept="image/jpeg,image/png,image/webp" />
+                </form>
+            }
+        </td>
+    </tr>
+}

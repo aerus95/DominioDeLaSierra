@@ -1,0 +1,36 @@
+@model IndexModel
+@if (Model.CategoryResults.TotalCount == 0)
+{
+    <tr><td class="empty-row" colspan="@(Model.CanWrite ? 5 : 4)">Ninguna categoría coincide con los filtros.</td></tr>
+}
+@foreach (var category in Model.CategoryResults.Items)
+{
+    <tr>
+        <td>@category.Name</td>
+        <td><code>@category.Slug</code></td>
+        <td>@(Model.Categories.FirstOrDefault(item => item.Id == category.ParentCategoryId)?.Name ?? "—")</td>
+        <td><span class="badge @(category.Active ? "on" : "off")">@(category.Active ? "Activa" : "Inactiva")</span></td>
+        @if (Model.CanWrite)
+        {
+            <td>
+                <div class="category-actions">
+                    <button type="button" class="edit-button js-edit-category"
+                            data-id="@category.Id"
+                            data-name="@category.Name"
+                            data-slug="@category.Slug"
+                            data-parent="@category.ParentCategoryId"
+                            data-active="@(category.Active ? "true" : "false")">Editar</button>
+                    <button type="button" class="edit-button js-toggle-category"
+                            data-id="@category.Id"
+                            data-name="@category.Name"
+                            data-slug="@category.Slug"
+                            data-parent="@category.ParentCategoryId"
+                            data-active="@(category.Active ? "true" : "false")">@(category.Active ? "Desactivar" : "Activar")</button>
+                    <button type="button" class="edit-button danger js-delete-category"
+                            data-id="@category.Id"
+                            data-name="@category.Name">Eliminar</button>
+                </div>
+            </td>
+        }
+    </tr>
+}

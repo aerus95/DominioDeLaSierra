@@ -1,6 +1,7 @@
 using DominioDeLaSierra.Application.Common;
 using DominioDeLaSierra.Application.Products.GetProducts;
 using DominioDeLaSierra.Domain;
+using DominioDeLaSierra.Infrastructure.Categories;
 using DominioDeLaSierra.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -12,10 +13,16 @@ public sealed class ProductCatalogQueries(ApplicationDbContext dbContext) : IPro
         GetProductsQuery query,
         CancellationToken cancellationToken = default)
     {
+        var visibleCategoryIds = await VisibleCategoryIdsAsync(cancellationToken);
+        if (visibleCategoryIds is null)
+        {
+            return new PagedResult<ProductListItemDto>([], query.Page, query.PageSize, 0, 0);
+        }
+
         var products = dbContext.Products
             .AsNoTracking()
             .Where(product => product.Active)
-            .Where(product => product.Category.Active);
+            .Where(product => visibleCategoryIds.Contains(product.CategoryId));
 
         if (query.Search is not null)
         {
@@ -68,7 +75,9 @@ public sealed class ProductCatalogQueries(ApplicationDbContext dbContext) : IPro
                 product.Category.Name,
                 product.Category.Slug,
                 product.PrimaryImageUrl,
-                product.Kind == ProductKind.Wine ? "Wine" : product.Kind == ProductKind.Pack ? "Pack" : "Standard"))
+                product.Kind == ProductKind.Wine ? "Wine" : product.Kind == ProductKind.Pack ? "Pack" : "Standard",
+                product.Kind == ProductKind.Wine ? product.Wine!.Grape : null,
+                product.Kind == ProductKind.Wine ? product.Wine!.AlcoholPercent : null))
             .ToListAsync(cancellationToken);
 
         return new PagedResult<ProductListItemDto>(
@@ -83,10 +92,16 @@ public sealed class ProductCatalogQueries(ApplicationDbContext dbContext) : IPro
         GetProductBySlugQuery query,
         CancellationToken cancellationToken = default)
     {
+        var visibleCategoryIds = await VisibleCategoryIdsAsync(cancellationToken);
+        if (visibleCategoryIds is null)
+        {
+            return null;
+        }
+
         return await dbContext.Products
             .AsNoTracking()
             .Where(product => product.Active)
-            .Where(product => product.Category.Active)
+            .Where(product => visibleCategoryIds.Contains(product.CategoryId))
             .Where(product => product.Slug == query.Slug)
             .Select(product => new ProductListItemDto(
                 product.Id,
@@ -100,7 +115,9 @@ public sealed class ProductCatalogQueries(ApplicationDbContext dbContext) : IPro
                 product.Category.Name,
                 product.Category.Slug,
                 product.PrimaryImageUrl,
-                product.Kind == ProductKind.Wine ? "Wine" : product.Kind == ProductKind.Pack ? "Pack" : "Standard"))
+                product.Kind == ProductKind.Wine ? "Wine" : product.Kind == ProductKind.Pack ? "Pack" : "Standard",
+                product.Kind == ProductKind.Wine ? product.Wine!.Grape : null,
+                product.Kind == ProductKind.Wine ? product.Wine!.AlcoholPercent : null))
             .FirstOrDefaultAsync(cancellationToken);
     }
 
@@ -108,10 +125,16 @@ public sealed class ProductCatalogQueries(ApplicationDbContext dbContext) : IPro
         GetPackComponentsQuery query,
         CancellationToken cancellationToken = default)
     {
+        var visibleCategoryIds = await VisibleCategoryIdsAsync(cancellationToken);
+        if (visibleCategoryIds is null)
+        {
+            return null;
+        }
+
         var pack = await dbContext.Products
             .AsNoTracking()
             .Where(product => product.Active)
-            .Where(product => product.Category.Active)
+            .Where(product => visibleCategoryIds.Contains(product.CategoryId))
             .Where(product => product.Slug == query.Slug)
             .Select(product => new { product.Id, product.Kind })
             .FirstOrDefaultAsync(cancellationToken);
@@ -138,5 +161,11 @@ public sealed class ProductCatalogQueries(ApplicationDbContext dbContext) : IPro
                 component.ComponentProduct.PrimaryImageUrl,
                 component.Quantity))
             .ToListAsync(cancellationToken);
+    }
+
+    private async Task<List<Guid>?> VisibleCategoryIdsAsync(CancellationToken cancellationToken)
+    {
+        var visibleCategoryIds = await PublicCategoryVisibility.GetVisibleIdsAsync(dbContext, cancellationToken);
+        return visibleCategoryIds.Count == 0 ? null : visibleCategoryIds;
     }
 }

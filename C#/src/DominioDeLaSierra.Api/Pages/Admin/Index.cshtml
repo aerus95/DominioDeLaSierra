@@ -9,6 +9,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Catálogo interno · Dominio de la Sierra</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=ds-signature-4">
     <style>
         :root { --wine:#421f25; --ink:#1d1917; --paper:#faf8f4; --cream:#f2ede4; --gold:#bd9560; --line:rgba(29,25,23,.14); --ok:#2f6b4f; --err:#8b2e35; }
         * { box-sizing: border-box; }
@@ -48,6 +49,22 @@
         .section-head h2 { margin: 0; }
         .section-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
         .section-head button { padding: 8px 14px; font-size: 13px; }
+        .filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin: 0 0 14px; }
+        .filters label { margin: 0 0 4px; }
+        .filter-field { flex: 1 1 150px; min-width: 140px; }
+        .filter-field.grow { flex: 2 1 220px; }
+        .filters button, .clear-link { padding: 9px 14px; font-size: 13px; }
+        .clear-link { display: inline-block; color: var(--ink); text-decoration: none; border: 1px solid var(--line); border-radius: 999px; background: transparent; }
+        .empty-row { color: #756c65; }
+        .live-results { position: relative; overflow-anchor: none; }
+        .live-results table, .live-results thead, .live-results tbody, .live-results tr, .live-results th, .live-results td { overflow-anchor: none; }
+        .filter-status, .filter-error {
+            position: absolute; left: 0; bottom: calc(100% + 2px); margin: 0;
+            font-size: 12px; line-height: 1.2; background: #fff; z-index: 1; pointer-events: none;
+        }
+        .filter-status { color: #756c65; }
+        .filter-error { pointer-events: auto; }
+        body.list-updating, body.list-updating * { overflow-anchor: none !important; }
         .image-cell { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
         .thumb-frame { width: 64px; height: 64px; border-radius: 8px; background: #eee8df; }
         .thumb-button { display: block; width: 64px; height: 64px; padding: 0; border: 0; border-radius: 8px; background: #eee8df; cursor: pointer; }
@@ -88,6 +105,9 @@
         .create-image-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
         #create-image-pick, #create-image-change, #create-image-clear { padding: 8px 12px; font-size: 13px; }
         .edit-button { padding: 5px 11px; font-size: 12px; white-space: nowrap; }
+        .edit-button.danger { background: transparent; color: var(--err); border: 1px solid var(--err); }
+        .category-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+        .slug-warning { margin-top: 6px; }
         @@media (max-width: 640px) {
             .component-row, .component-head, .row { grid-template-columns: 1fr; }
         }
@@ -118,33 +138,79 @@
 
         <section class="card" style="margin-bottom:22px">
             <div class="section-head">
-                <h2>Categorías (@Model.Categories.Count)</h2>
+                <h2>Categorías (<span id="category-count">@Model.CategoryResults.TotalCount</span>)</h2>
                 @if (Model.CanWrite)
                 {
                     <button type="button" id="open-category">+ Nueva categoría</button>
                 }
             </div>
+            <p id="category-list-error" class="err-text" hidden></p>
+            <form id="category-filters" class="filters" method="get">
+                <div class="filter-field grow">
+                    <label for="category-query">Buscar</label>
+                    <input id="category-query" name="categoryQuery" value="@Model.CategoryQuery" maxlength="@AdminListSearch.MaxLength" placeholder="Nombre o slug" />
+                </div>
+                <div class="filter-field">
+                    <label for="category-active">Estado</label>
+                    <select id="category-active" name="categoryActive">
+                        <option value="">Todos</option>
+                        <option value="true" selected="@IndexModel.SelectedAttr(Model.CategoryActiveValue == "true")">Activas</option>
+                        <option value="false" selected="@IndexModel.SelectedAttr(Model.CategoryActiveValue == "false")">Inactivas</option>
+                    </select>
+                </div>
+                <div class="filter-field">
+                    <label for="category-parent-filter">Categoría padre</label>
+                    <select id="category-parent-filter" name="categoryParent">
+                        <option value="">Cualquiera</option>
+                        <option value="none" selected="@IndexModel.SelectedAttr(Model.CategoryRootsOnly)">Sin padre</option>
+                        @foreach (var category in Model.Categories)
+                        {
+                            <option value="@category.Id" selected="@IndexModel.SelectedAttr(Model.CategoryParentId == category.Id)">@category.Name</option>
+                        }
+                    </select>
+                </div>
+                @if (Model.ProductQuery is not null)
+                {
+                    <input type="hidden" name="productQuery" value="@Model.ProductQuery" />
+                }
+                @if (Model.ProductCategoryId is Guid productCategoryId)
+                {
+                    <input type="hidden" name="productCategory" value="@productCategoryId" />
+                }
+                @if (Model.ProductKindValue is not null)
+                {
+                    <input type="hidden" name="productKind" value="@Model.ProductKindValue" />
+                }
+                @if (Model.ProductActiveValue is not null)
+                {
+                    <input type="hidden" name="productActive" value="@Model.ProductActiveValue" />
+                }
+                <button type="submit">Filtrar</button>
+                <a class="clear-link" id="clear-category-filters" href="@Model.ClearCategoryFiltersUrl">Limpiar filtros</a>
+            </form>
+            <div class="live-results">
+            <p id="category-filter-status" class="filter-status" hidden>Buscando…</p>
+            <p id="category-filter-error" class="err-text filter-error" hidden></p>
             <table>
                 <thead>
-                    <tr><th>Nombre</th><th>Slug</th><th>Padre</th><th>Estado</th></tr>
-                </thead>
-                <tbody>
-                @foreach (var category in Model.Categories)
-                {
                     <tr>
-                        <td>@category.Name</td>
-                        <td><code>@category.Slug</code></td>
-                        <td>@(Model.Categories.FirstOrDefault(item => item.Id == category.ParentCategoryId)?.Name ?? "—")</td>
-                        <td><span class="badge @(category.Active ? "on" : "off")">@(category.Active ? "Activa" : "Inactiva")</span></td>
+                        <th>Nombre</th><th>Slug</th><th>Padre</th><th>Estado</th>
+                        @if (Model.CanWrite)
+                        {
+                            <th>Acciones</th>
+                        }
                     </tr>
-                }
+                </thead>
+                <tbody id="category-rows">
+                <partial name="_CategoryRows" model="Model" />
                 </tbody>
             </table>
+            </div>
         </section>
 
         <section class="card">
             <div class="section-head">
-                <h2>Productos (@Model.Products.Count)</h2>
+                <h2>Productos (<span id="product-count">@Model.ProductResults.TotalCount</span>)</h2>
                 @if (Model.CanWrite)
                 {
                     <div class="section-actions">
@@ -153,6 +219,56 @@
                     </div>
                 }
             </div>
+            <form id="product-filters" class="filters" method="get">
+                <div class="filter-field grow">
+                    <label for="product-query">Buscar</label>
+                    <input id="product-query" name="productQuery" value="@Model.ProductQuery" maxlength="@AdminListSearch.MaxLength" placeholder="Nombre, referencia o descripción" />
+                </div>
+                <div class="filter-field">
+                    <label for="product-category">Categoría</label>
+                    <select id="product-category" name="productCategory">
+                        <option value="">Todas</option>
+                        @foreach (var category in Model.Categories)
+                        {
+                            <option value="@category.Id" selected="@IndexModel.SelectedAttr(Model.ProductCategoryId == category.Id)">@category.Name</option>
+                        }
+                    </select>
+                </div>
+                <div class="filter-field">
+                    <label for="product-kind">Tipo</label>
+                    <select id="product-kind" name="productKind">
+                        <option value="">Todos</option>
+                        <option value="Wine" selected="@IndexModel.SelectedAttr(Model.ProductKindValue == "Wine")">Vino</option>
+                        <option value="Pack" selected="@IndexModel.SelectedAttr(Model.ProductKindValue == "Pack")">Pack</option>
+                        <option value="Standard" selected="@IndexModel.SelectedAttr(Model.ProductKindValue == "Standard")">Estándar</option>
+                    </select>
+                </div>
+                <div class="filter-field">
+                    <label for="product-active">Estado</label>
+                    <select id="product-active" name="productActive">
+                        <option value="">Todos</option>
+                        <option value="true" selected="@IndexModel.SelectedAttr(Model.ProductActiveValue == "true")">Activos</option>
+                        <option value="false" selected="@IndexModel.SelectedAttr(Model.ProductActiveValue == "false")">Inactivos</option>
+                    </select>
+                </div>
+                @if (Model.CategoryQuery is not null)
+                {
+                    <input type="hidden" name="categoryQuery" value="@Model.CategoryQuery" />
+                }
+                @if (Model.CategoryActiveValue is not null)
+                {
+                    <input type="hidden" name="categoryActive" value="@Model.CategoryActiveValue" />
+                }
+                @if (Model.CategoryParentValue is not null)
+                {
+                    <input type="hidden" name="categoryParent" value="@Model.CategoryParentValue" />
+                }
+                <button type="submit">Filtrar</button>
+                <a class="clear-link" id="clear-product-filters" href="@Model.ClearProductFiltersUrl">Limpiar filtros</a>
+            </form>
+            <div class="live-results">
+            <p id="product-filter-status" class="filter-status" hidden>Buscando…</p>
+            <p id="product-filter-error" class="err-text filter-error" hidden></p>
             <table class="products">
                 <thead>
                     <tr>
@@ -164,64 +280,11 @@
                         <th class="col-center">Imagen</th>
                     </tr>
                 </thead>
-                <tbody>
-                @foreach (var product in Model.Products)
-                {
-                    <tr>
-                        <td class="col-text"><code>@product.Reference</code></td>
-                        <td class="col-text">@product.Name<br /><code>@product.Slug</code></td>
-                        <td class="col-center">@IndexModel.KindLabel(product.Kind)</td>
-                        <td class="col-center">@product.CategoryName</td>
-                        <td class="col-center">@product.Price.ToString("N2") €</td>
-                        <td class="col-center">@product.VatRate.ToString("N2") %</td>
-                        <td class="col-center">@IndexModel.StockLabel(product)</td>
-                        <td class="col-center"><span class="badge @(product.Active ? "on" : "off")">@(product.Active ? "Activo" : "Inactivo")</span></td>
-                        <td class="col-center">@product.UpdatedAt.ToLocalTime().ToString("g")</td>
-                        @if (Model.CanWrite)
-                        {
-                            <td class="col-center"><button type="button" class="edit-button js-edit-product" data-url="@Url.Page(null, pageHandler: "EditProduct", new { productId = product.Id })">Editar</button></td>
-                        }
-                        <td class="col-center">
-                            @{
-                                var hasImage = !string.IsNullOrWhiteSpace(product.PrimaryImageUrl);
-                            }
-                            <div class="image-cell">
-                                @if (hasImage)
-                                {
-                                    <button type="button" class="thumb-button" data-open-lightbox data-full="@product.PrimaryImageUrl" data-alt="@product.Name">
-                                        <img class="thumb" src="@product.PrimaryImageUrl" alt="" width="64" height="64" />
-                                    </button>
-                                }
-                                else
-                                {
-                                    <div class="thumb-frame thumb-empty">Sin imagen</div>
-                                }
-                                @if (Model.CanWrite)
-                                {
-                                    <div class="image-actions">
-                                        <button type="button" class="js-pick-image" data-form="image-form-@product.Id" title="@(hasImage ? "Cambiar imagen" : "Subir imagen")" aria-label="@(hasImage ? "Cambiar imagen" : "Subir imagen")">@(hasImage ? "Cambiar" : "Subir")</button>
-                                        @if (hasImage)
-                                        {
-                                            <form method="post" asp-page-handler="DeletePrimaryImage" onsubmit="return confirm('¿Eliminar la imagen de este producto?');">
-                                                <input type="hidden" name="imageProductId" value="@product.Id" />
-                                                <button class="danger" type="submit" title="Eliminar imagen" aria-label="Eliminar imagen">Eliminar</button>
-                                            </form>
-                                        }
-                                    </div>
-                                }
-                            </div>
-                            @if (Model.CanWrite)
-                            {
-                                <form id="image-form-@product.Id" class="js-image-form" method="post" asp-page-handler="SetPrimaryImage" enctype="multipart/form-data">
-                                    <input type="hidden" name="imageProductId" value="@product.Id" />
-                                    <input class="image-file" type="file" name="primaryImage" accept="image/jpeg,image/png,image/webp" />
-                                </form>
-                            }
-                        </td>
-                    </tr>
-                }
+                <tbody id="product-rows">
+                <partial name="_ProductRows" model="Model" />
                 </tbody>
             </table>
+            </div>
         </section>
     </div>
     <div id="image-lightbox" class="modal" hidden>
@@ -257,19 +320,21 @@
                     <strong id="category-title">Nueva categoría</strong>
                     <button type="button" data-close-category aria-label="Cerrar">×</button>
                 </div>
-                <form id="category-form" method="post" asp-page-handler="CreateCategory">
+                <form id="category-form" method="post" asp-page-handler="CreateCategory" data-update-url="@Url.Page(null, pageHandler: "UpdateCategory")">
                     <p id="category-error" class="err-text form-error" hidden></p>
                     <p class="muted">Si dejas el slug vacío se genera a partir del nombre.</p>
+                    <input type="hidden" id="category-id" name="categoryId" value="" disabled />
                     <label asp-for="InputCategory.Name">Nombre</label>
                     <input asp-for="InputCategory.Name" required maxlength="@CatalogLimits.CategoryNameMaxLength" />
                     <label asp-for="InputCategory.Slug">Slug (opcional)</label>
                     <input asp-for="InputCategory.Slug" maxlength="@CatalogLimits.CategorySlugMaxLength" placeholder="tintos" />
+                    <p id="category-slug-warning" class="muted slug-warning" hidden>Cambiar el slug puede afectar a los filtros del catálogo público y a las importaciones de productos.</p>
                     <label asp-for="InputCategory.ParentCategoryId">Categoría padre</label>
-                    <select asp-for="InputCategory.ParentCategoryId">
+                    <select id="category-parent" asp-for="InputCategory.ParentCategoryId">
                         <option value="">Ninguna</option>
                         @foreach (var category in Model.Categories)
                         {
-                            <option value="@category.Id">@category.Name</option>
+                            <option value="@category.Id" data-parent="@category.ParentCategoryId">@category.Name</option>
                         }
                     </select>
                     <label class="check"><input asp-for="InputCategory.Active" /> Activa</label>
@@ -484,6 +549,7 @@
             </div>
         </div>
     }
+    <script src="/js/admin-live-filters.js"></script>
     <script>
         (function () {
             const lightbox = document.getElementById('image-lightbox');
@@ -493,24 +559,25 @@
             let previewForm = null;
             let previewInput = null;
 
-            document.querySelectorAll('[data-open-lightbox]').forEach(function (button) {
-                button.addEventListener('click', function () {
-                    lightboxImg.src = button.getAttribute('data-full');
-                    lightboxImg.alt = button.getAttribute('data-alt') || '';
-                    lightbox.hidden = false;
-                });
-            });
-
-            document.querySelectorAll('.js-pick-image').forEach(function (button) {
-                button.addEventListener('click', function () {
-                    const form = document.getElementById(button.getAttribute('data-form'));
+            const productRows = document.getElementById('product-rows');
+            if (productRows) {
+                productRows.addEventListener('click', function (event) {
+                    const light = event.target.closest('[data-open-lightbox]');
+                    if (light) {
+                        lightboxImg.src = light.getAttribute('data-full');
+                        lightboxImg.alt = light.getAttribute('data-alt') || '';
+                        lightbox.hidden = false;
+                        return;
+                    }
+                    const pick = event.target.closest('.js-pick-image');
+                    if (!pick) return;
+                    const form = document.getElementById(pick.getAttribute('data-form'));
                     const input = form && form.querySelector('input[type="file"]');
                     if (input) input.click();
                 });
-            });
-
-            document.querySelectorAll('.js-image-form input[type="file"]').forEach(function (input) {
-                input.addEventListener('change', function () {
+                productRows.addEventListener('change', function (event) {
+                    const input = event.target;
+                    if (!input.matches || !input.matches('.js-image-form input[type="file"]')) return;
                     const file = input.files && input.files[0];
                     if (!file) return;
                     previewForm = input.form;
@@ -522,7 +589,7 @@
                     };
                     reader.readAsDataURL(file);
                 });
-            });
+            }
 
             document.getElementById('image-preview-save').addEventListener('click', function () {
                 if (previewForm) previewForm.submit();
@@ -577,6 +644,10 @@
                     error.hidden = !message;
                 }
 
+                function resolveFallback() {
+                    return typeof config.fallback === 'function' ? config.fallback() : config.fallback;
+                }
+
                 function closeModal() {
                     if (busy) return;
                     modal.hidden = true;
@@ -623,17 +694,17 @@
                         })
                         .then(function (result) {
                             if (result.ok && result.data && result.data.ok) {
-                                window.location.assign(window.location.pathname);
+                                window.location.assign(window.location.href);
                                 return;
                             }
                             busy = false;
                             submit.disabled = false;
-                            showError((result.data && result.data.message) || config.fallback);
+                            showError((result.data && result.data.message) || resolveFallback());
                         })
                         .catch(function () {
                             busy = false;
                             submit.disabled = false;
-                            showError(config.fallback);
+                            showError(resolveFallback());
                         });
                 });
 
@@ -643,14 +714,187 @@
                 };
             }
 
+            const categoryForm = document.getElementById('category-form');
+            const categoryCreateAction = categoryForm ? categoryForm.action : '';
+            const categoryIdField = document.getElementById('category-id');
+            const categoryDeleteUrl = '@Url.Page(null, pageHandler: "DeleteCategory")';
+
+            function categoryParentSelect() {
+                return categoryForm ? categoryForm.querySelector('[name="InputCategory.ParentCategoryId"]') : null;
+            }
+
+            function resetCategoryParents() {
+                const select = categoryParentSelect();
+                if (!select) return;
+                Array.from(select.options).forEach(function (option) {
+                    option.disabled = false;
+                    option.hidden = false;
+                });
+            }
+
+            function blockCategoryParents(categoryId) {
+                const select = categoryParentSelect();
+                if (!select || !categoryId) return;
+                const children = {};
+                Array.from(select.options).forEach(function (option) {
+                    if (!option.value) return;
+                    const parentId = option.getAttribute('data-parent') || '';
+                    if (!children[parentId]) children[parentId] = [];
+                    children[parentId].push(option.value);
+                });
+                const blocked = {};
+                const stack = [categoryId];
+                blocked[categoryId] = true;
+                while (stack.length) {
+                    const current = stack.pop();
+                    (children[current] || []).forEach(function (childId) {
+                        if (blocked[childId]) return;
+                        blocked[childId] = true;
+                        stack.push(childId);
+                    });
+                }
+                Array.from(select.options).forEach(function (option) {
+                    const block = !!option.value && !!blocked[option.value];
+                    option.disabled = block;
+                    option.hidden = block;
+                });
+            }
+
+            function setCategoryMode(editing) {
+                if (!categoryForm) return;
+                document.getElementById('category-title').textContent = editing ? 'Editar categoría' : 'Nueva categoría';
+                document.getElementById('category-save').textContent = editing ? 'Guardar cambios' : 'Crear categoría';
+                document.getElementById('category-slug-warning').hidden = !editing;
+                categoryForm.action = editing ? categoryForm.getAttribute('data-update-url') : categoryCreateAction;
+                if (!categoryIdField) return;
+                categoryIdField.disabled = !editing;
+                if (!editing) {
+                    categoryIdField.value = '';
+                    resetCategoryParents();
+                }
+            }
+
             const categoryModal = bindWriteModal({
                 id: 'category-modal',
                 openId: 'open-category',
                 errorId: 'category-error',
                 focusName: 'InputCategory.Name',
                 closeSelector: '[data-close-category]',
-                fallback: 'No se ha podido crear la categoría.'
+                fallback: function () {
+                    return categoryIdField && !categoryIdField.disabled
+                        ? 'No se ha podido guardar la categoría.'
+                        : 'No se ha podido crear la categoría.';
+                },
+                onReset: function () {
+                    setCategoryMode(false);
+                }
             });
+
+            if (categoryForm) {
+                const categoryRows = document.getElementById('category-rows');
+                if (categoryRows) categoryRows.addEventListener('click', function (event) {
+                    const edit = event.target.closest('.js-edit-category');
+                    if (edit) {
+                        categoryForm.reset();
+                        setCategoryMode(true);
+                        const categoryId = edit.getAttribute('data-id') || '';
+                        categoryIdField.value = categoryId;
+                        categoryForm.querySelector('[name="InputCategory.Name"]').value = edit.getAttribute('data-name') || '';
+                        categoryForm.querySelector('[name="InputCategory.Slug"]').value = edit.getAttribute('data-slug') || '';
+                        const active = categoryForm.querySelector('input[type="checkbox"][name="InputCategory.Active"]');
+                        if (active) active.checked = edit.getAttribute('data-active') === 'true';
+                        resetCategoryParents();
+                        blockCategoryParents(categoryId);
+                        const parentSelect = categoryParentSelect();
+                        const parentId = edit.getAttribute('data-parent') || '';
+                        if (parentSelect) {
+                            parentSelect.value = parentId;
+                            if (parentSelect.value !== parentId) parentSelect.value = '';
+                        }
+                        document.getElementById('category-error').hidden = true;
+                        document.getElementById('category-modal').hidden = false;
+                        categoryForm.querySelector('[name="InputCategory.Name"]').focus();
+                        return;
+                    }
+
+                    const toggle = event.target.closest('.js-toggle-category');
+                    if (toggle) {
+                        const name = toggle.getAttribute('data-name') || 'esta categoría';
+                        const isActive = toggle.getAttribute('data-active') === 'true';
+                        if (isActive && !window.confirm('Desactivar «' + name + '» oculta sus productos y sus categorías descendientes en la tienda pública. Los productos y las subcategorías conservan su estado. ¿Continuar?')) return;
+                        const error = document.getElementById('category-list-error');
+                        const tokenInput = document.querySelector('#page-antiforgery input[name="__RequestVerificationToken"]');
+                        const body = new FormData();
+                        body.append('categoryId', toggle.getAttribute('data-id') || '');
+                        body.append('InputCategory.Name', toggle.getAttribute('data-name') || '');
+                        body.append('InputCategory.Slug', toggle.getAttribute('data-slug') || '');
+                        body.append('InputCategory.ParentCategoryId', toggle.getAttribute('data-parent') || '');
+                        body.append('InputCategory.Active', isActive ? 'false' : 'true');
+                        body.append('__RequestVerificationToken', tokenInput ? tokenInput.value : '');
+                        toggle.disabled = true;
+                        fetch(categoryForm.getAttribute('data-update-url'), {
+                            method: 'POST',
+                            body: body,
+                            credentials: 'same-origin',
+                            headers: { 'Accept': 'application/json' }
+                        }).then(function (response) {
+                            return response.json().then(function (data) {
+                                return { ok: response.ok, data: data };
+                            }).catch(function () {
+                                return { ok: false, data: null };
+                            });
+                        }).then(function (result) {
+                            if (result.ok && result.data && result.data.ok) {
+                                window.location.assign(window.location.href);
+                                return;
+                            }
+                            toggle.disabled = false;
+                            error.textContent = (result.data && result.data.message) || 'No se ha podido cambiar el estado de la categoría.';
+                            error.hidden = false;
+                        }).catch(function () {
+                            toggle.disabled = false;
+                            error.textContent = 'No se ha podido cambiar el estado de la categoría.';
+                            error.hidden = false;
+                        });
+                        return;
+                    }
+
+                    const remove = event.target.closest('.js-delete-category');
+                    if (!remove) return;
+                    const name = remove.getAttribute('data-name') || 'esta categoría';
+                    if (!window.confirm('¿Eliminar la categoría «' + name + '»?')) return;
+                    const error = document.getElementById('category-list-error');
+                    const tokenInput = document.querySelector('#page-antiforgery input[name="__RequestVerificationToken"]');
+                    const body = new FormData();
+                    body.append('categoryId', remove.getAttribute('data-id') || '');
+                    body.append('__RequestVerificationToken', tokenInput ? tokenInput.value : '');
+                    remove.disabled = true;
+                    fetch(categoryDeleteUrl, {
+                        method: 'POST',
+                        body: body,
+                        credentials: 'same-origin',
+                        headers: { 'Accept': 'application/json' }
+                    }).then(function (response) {
+                        return response.json().then(function (data) {
+                            return { ok: response.ok, data: data };
+                        }).catch(function () {
+                            return { ok: false, data: null };
+                        });
+                    }).then(function (result) {
+                        if (result.ok && result.data && result.data.ok) {
+                            window.location.assign(window.location.href);
+                            return;
+                        }
+                        remove.disabled = false;
+                        error.textContent = (result.data && result.data.message) || 'No se ha podido eliminar la categoría.';
+                        error.hidden = false;
+                    }).catch(function () {
+                        remove.disabled = false;
+                        error.textContent = 'No se ha podido eliminar la categoría.';
+                        error.hidden = false;
+                    });
+                });
+            }
             const productForm = document.getElementById('product-form');
             let createCandidates = null;
             let createCandidatesRequest = null;
@@ -878,7 +1122,7 @@
                         })
                         .then(function (report) {
                             if (report && report.imported) {
-                                window.location.assign(window.location.pathname);
+                                window.location.assign(window.location.href);
                                 return;
                             }
                             showReport(report || { isValid: false, documentErrors: ['No se ha podido leer la respuesta.'], products: [] });
@@ -971,10 +1215,11 @@
                     if (event.target === editModal) closeEditNow();
                 });
 
-                document.querySelectorAll('.js-edit-product').forEach(function (button) {
-                    button.addEventListener('click', function () {
-                        openEditor(button.getAttribute('data-url'));
-                    });
+                const productRowsForEdit = document.getElementById('product-rows');
+                if (productRowsForEdit) productRowsForEdit.addEventListener('click', function (event) {
+                    const button = event.target.closest('.js-edit-product');
+                    if (!button) return;
+                    openEditor(button.getAttribute('data-url'));
                 });
 
                 document.getElementById('edit-add-component').addEventListener('click', function () {
@@ -1146,7 +1391,7 @@
                         })
                         .then(function (result) {
                             if (result.ok && result.data && result.data.ok) {
-                                window.location.assign(window.location.pathname);
+                                window.location.assign(window.location.href);
                                 return;
                             }
                             editBusy = false;
@@ -1159,6 +1404,221 @@
                             showEditError('No se ha podido guardar el producto.');
                         });
                 }
+            }
+
+            if (window.AdminLiveFilters) {
+                const live = window.AdminLiveFilters;
+                const categoryFilters = document.getElementById('category-filters');
+                const productFilters = document.getElementById('product-filters');
+                const categoryRefresh = new live.ListRefresh(function (url, options) {
+                    return fetch(url, Object.assign({ credentials: 'same-origin', headers: { 'Accept': 'text/html' } }, options));
+                });
+                const productRefresh = new live.ListRefresh(function (url, options) {
+                    return fetch(url, Object.assign({ credentials: 'same-origin', headers: { 'Accept': 'text/html' } }, options));
+                });
+                let categoryTimer = 0;
+                let productTimer = 0;
+
+                function fieldValue(form, name) {
+                    if (!form) return '';
+                    const element = form.elements.namedItem(name);
+                    return element ? String(element.value || '') : '';
+                }
+
+                function currentFields() {
+                    return {
+                        categoryQuery: fieldValue(categoryFilters, 'categoryQuery'),
+                        categoryActive: fieldValue(categoryFilters, 'categoryActive'),
+                        categoryParent: fieldValue(categoryFilters, 'categoryParent'),
+                        productQuery: fieldValue(productFilters, 'productQuery'),
+                        productCategory: fieldValue(productFilters, 'productCategory'),
+                        productKind: fieldValue(productFilters, 'productKind'),
+                        productActive: fieldValue(productFilters, 'productActive')
+                    };
+                }
+
+                function writeFields(fields) {
+                    Object.keys(fields).forEach(function (name) {
+                        const form = name.indexOf('category') === 0 ? categoryFilters : productFilters;
+                        const element = form && form.elements.namedItem(name);
+                        if (element) element.value = fields[name];
+                    });
+                }
+
+                function syncHidden(form, names, fields) {
+                    if (!form) return;
+                    names.forEach(function (name) {
+                        let input = form.querySelector('input[type="hidden"][name="' + name + '"]');
+                        const value = (fields[name] || '').trim();
+                        if (!value) {
+                            if (input) input.remove();
+                            return;
+                        }
+                        if (!input) {
+                            input = document.createElement('input');
+                            input.type = 'hidden';
+                            input.name = name;
+                            form.appendChild(input);
+                        }
+                        input.value = value;
+                    });
+                }
+
+                function applyFragment(html, fragmentId, rowsId, countId) {
+                    const parsed = new DOMParser().parseFromString(html, 'text/html');
+                    const fragment = parsed.getElementById(fragmentId);
+                    const rows = document.getElementById(rowsId);
+                    if (!fragment || !rows) throw new Error('fragment');
+                    const block = rows.closest('.live-results');
+                    const section = rows.closest('section');
+                    const scrollX = window.scrollX;
+                    const scrollY = window.scrollY;
+                    const sectionBottom = section ? section.getBoundingClientRect().bottom : 0;
+                    const heightBefore = block ? block.offsetHeight : 0;
+                    const documentHeight = document.documentElement.scrollHeight;
+                    const active = document.activeElement;
+                    let focusVisibleInSection = false;
+                    if (active && section && section.contains(active) && !rows.contains(active) && active.getBoundingClientRect) {
+                        const rect = active.getBoundingClientRect();
+                        focusVisibleInSection = rect.bottom > 0 && rect.top < window.innerHeight;
+                    }
+                    const keepBelow = live.keepContentBelow(sectionBottom, window.innerHeight, focusVisibleInSection);
+                    document.body.classList.add('list-updating');
+                    if (block) block.style.minHeight = heightBefore + 'px';
+                    rows.replaceChildren(fragment.content.cloneNode(true));
+                    const table = rows.closest('table');
+                    const heightAfter = table ? table.offsetHeight : heightBefore;
+                    const plan = live.planViewport({
+                        scrollY: scrollY,
+                        viewportHeight: window.innerHeight,
+                        sectionBottom: sectionBottom,
+                        keepBelow: keepBelow,
+                        heightBefore: heightBefore,
+                        heightAfter: heightAfter,
+                        documentHeight: documentHeight
+                    });
+                    if (block) {
+                        if (plan.minHeight > 0) {
+                            block.style.minHeight = plan.minHeight + 'px';
+                            block.dataset.naturalHeight = String(heightAfter);
+                        } else {
+                            block.style.minHeight = '';
+                            delete block.dataset.naturalHeight;
+                        }
+                    }
+                    if (window.scrollX !== scrollX || Math.abs(window.scrollY - plan.scrollY) > 0.5) {
+                        window.scrollTo(scrollX, plan.scrollY);
+                    }
+                    document.body.classList.remove('list-updating');
+                    const count = document.getElementById(countId);
+                    if (count) count.textContent = fragment.getAttribute('data-count') || '0';
+                }
+
+                function releaseReservations() {
+                    document.querySelectorAll('.live-results[data-natural-height]').forEach(function (block) {
+                        const natural = Number(block.dataset.naturalHeight) || 0;
+                        if (!live.canReleaseReservation({
+                            scrollY: window.scrollY,
+                            viewportHeight: window.innerHeight,
+                            visualHeight: block.offsetHeight,
+                            naturalHeight: natural,
+                            documentHeight: document.documentElement.scrollHeight
+                        })) return;
+                        block.style.minHeight = '';
+                        delete block.dataset.naturalHeight;
+                    });
+                }
+
+                window.addEventListener('scroll', releaseReservations, { passive: true });
+
+                function setStatus(id, visible) {
+                    const element = document.getElementById(id);
+                    if (element) element.hidden = !visible;
+                }
+
+                function setFilterError(id, message) {
+                    const element = document.getElementById(id);
+                    if (!element) return;
+                    element.textContent = message || '';
+                    element.hidden = !message;
+                }
+
+                function publish(fields) {
+                    const params = live.catalogQuery(fields);
+                    const next = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+                    window.history.replaceState(null, '', next);
+                    syncHidden(categoryFilters, ['productQuery', 'productCategory', 'productKind', 'productActive'], fields);
+                    syncHidden(productFilters, ['categoryQuery', 'categoryActive', 'categoryParent'], fields);
+                    return params;
+                }
+
+                function refreshRows(kind) {
+                    const fields = currentFields();
+                    const params = publish(fields);
+                    params.set('handler', kind === 'category' ? 'CategoryRows' : 'ProductRows');
+                    const url = window.location.pathname + '?' + params.toString();
+                    const refresher = kind === 'category' ? categoryRefresh : productRefresh;
+                    const statusId = kind === 'category' ? 'category-filter-status' : 'product-filter-status';
+                    const errorId = kind === 'category' ? 'category-filter-error' : 'product-filter-error';
+                    setStatus(statusId, true);
+                    setFilterError(errorId, '');
+                    let current = null;
+                    return refresher.run(url).then(function (result) {
+                        current = result;
+                        if (!result || result.aborted || result.stale || result.generation !== refresher.generation) return;
+                        if (result.failed || !result.response || !result.response.ok) throw new Error('search');
+                        return result.response.text().then(function (html) {
+                            if (result.generation !== refresher.generation) return;
+                            if (kind === 'category') applyFragment(html, 'category-fragment', 'category-rows', 'category-count');
+                            else applyFragment(html, 'product-fragment', 'product-rows', 'product-count');
+                        });
+                    }).catch(function () {
+                        if (current && current.generation === refresher.generation) {
+                            setFilterError(errorId, 'No se ha podido actualizar el listado.');
+                        }
+                    }).finally(function () {
+                        if (current && current.generation === refresher.generation) setStatus(statusId, false);
+                    });
+                }
+
+                function schedule(kind, control) {
+                    const delay = live.refreshDelay(control);
+                    const timer = kind === 'category' ? categoryTimer : productTimer;
+                    window.clearTimeout(timer);
+                    const run = function () { refreshRows(kind); };
+                    if (delay === 0) run();
+                    else if (kind === 'category') categoryTimer = window.setTimeout(run, delay);
+                    else productTimer = window.setTimeout(run, delay);
+                }
+
+                function bindFilters(form, kind) {
+                    if (!form) return;
+                    form.addEventListener('input', function (event) {
+                        if (event.target && event.target.tagName === 'INPUT') schedule(kind, 'input');
+                    });
+                    form.addEventListener('change', function (event) {
+                        if (event.target && event.target.tagName === 'SELECT') schedule(kind, 'select');
+                    });
+                    form.addEventListener('submit', function (event) {
+                        event.preventDefault();
+                        schedule(kind, 'submit');
+                    });
+                }
+
+                bindFilters(categoryFilters, 'category');
+                bindFilters(productFilters, 'product');
+                const clearCategories = document.getElementById('clear-category-filters');
+                const clearProducts = document.getElementById('clear-product-filters');
+                if (clearCategories) clearCategories.addEventListener('click', function (event) {
+                    event.preventDefault();
+                    writeFields(live.clearFields(currentFields(), 'category'));
+                    schedule('category', 'clear');
+                });
+                if (clearProducts) clearProducts.addEventListener('click', function (event) {
+                    event.preventDefault();
+                    writeFields(live.clearFields(currentFields(), 'product'));
+                    schedule('product', 'clear');
+                });
             }
         })();
     </script>

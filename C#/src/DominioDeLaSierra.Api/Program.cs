@@ -117,6 +117,8 @@ if (app.Environment.IsEnvironment("Testing"))
 
 app.UseForwardedHeaders();
 
+app.UseStaticFiles();
+
 if (app.Environment.IsDevelopment())
 {
     app.UseDeveloperExceptionPage();
@@ -159,6 +161,12 @@ app.UseStaticFiles(new StaticFileOptions
 
 app.UseAuthentication();
 app.UseAuthorization();
+var faviconPath = FindStoreFavicon(app.Environment.ContentRootPath) ?? FindStoreFavicon(AppContext.BaseDirectory);
+if (faviconPath is not null)
+{
+    app.MapGet("/favicon.svg", () => Results.File(faviconPath, "image/svg+xml"));
+}
+
 app.MapRazorPages();
 app.MapControllers();
 app.Run();
@@ -173,6 +181,23 @@ static Task RedirectOrStatus(Microsoft.AspNetCore.Authentication.RedirectContext
 
     context.Response.Redirect(context.RedirectUri);
     return Task.CompletedTask;
+}
+
+static string? FindStoreFavicon(string start)
+{
+    var directory = new DirectoryInfo(start);
+    while (directory is not null)
+    {
+        var candidate = Path.Combine(directory.FullName, "Angular", "web", "src", "favicon.svg");
+        if (File.Exists(candidate))
+        {
+            return candidate;
+        }
+
+        directory = directory.Parent;
+    }
+
+    return null;
 }
 
 public partial class Program;

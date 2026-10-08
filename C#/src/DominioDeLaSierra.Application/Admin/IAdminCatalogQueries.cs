@@ -38,6 +38,42 @@ public sealed record AdminComponentCandidateDto(
     string Kind,
     bool Active);
 
+public sealed record AdminProductListQuery(
+    string? Search,
+    Guid? CategoryId,
+    ProductKind? Kind,
+    bool? Active)
+{
+    public static AdminProductListQuery Unfiltered { get; } = new(null, null, null, null);
+}
+
+public sealed record AdminCategoryListQuery(
+    string? Search,
+    bool? Active,
+    Guid? ParentCategoryId,
+    bool RootsOnly)
+{
+    public static AdminCategoryListQuery Unfiltered { get; } = new(null, null, null, false);
+}
+
+public sealed record AdminListResult<T>(IReadOnlyList<T> Items, int TotalCount);
+
+public static class AdminListSearch
+{
+    public const int MaxLength = 200;
+
+    public static string? Normalize(string? search)
+    {
+        if (string.IsNullOrWhiteSpace(search))
+        {
+            return null;
+        }
+
+        var trimmed = search.Trim();
+        return trimmed.Length <= MaxLength ? trimmed : trimmed[..MaxLength];
+    }
+}
+
 public sealed record AdminProductEditorDto(
     Guid Id,
     string Reference,
@@ -59,9 +95,13 @@ public sealed record AdminProductEditorDto(
 
 public interface IAdminCatalogQueries
 {
-    Task<IReadOnlyList<AdminCategoryDto>> GetCategoriesAsync(CancellationToken cancellationToken = default);
+    Task<AdminListResult<AdminCategoryDto>> GetCategoriesAsync(
+        AdminCategoryListQuery query,
+        CancellationToken cancellationToken = default);
 
-    Task<IReadOnlyList<AdminProductDto>> GetProductsAsync(CancellationToken cancellationToken = default);
+    Task<AdminListResult<AdminProductDto>> GetProductsAsync(
+        AdminProductListQuery query,
+        CancellationToken cancellationToken = default);
 
     Task<AdminProductEditorDto?> GetProductEditorAsync(Guid productId, CancellationToken cancellationToken = default);
 

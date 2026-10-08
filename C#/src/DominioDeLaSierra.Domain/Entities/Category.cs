@@ -24,4 +24,12 @@ public sealed class Category
         ParentCategoryId = parentCategoryId;
         Active = active;
     }
+
+    public void Update(string name, string slug, Guid? parentCategoryId, bool active)
+    {
+        Name = name;
+        Slug = slug;
+        ParentCategoryId = parentCategoryId;
+        Active = active;
+    }
 }

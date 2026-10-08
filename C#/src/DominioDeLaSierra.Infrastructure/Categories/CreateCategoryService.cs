@@ -23,6 +23,9 @@ public sealed class CreateCategoryService(ApplicationDbContext dbContext) : ICre
             "El slug no es válido.",
             "El slug no puede superar 180 caracteres.");
 
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        await CategoryHierarchyLock.AcquireAsync(dbContext, cancellationToken);
+
         if (command.ParentCategoryId is { } parentId)
         {
             var parentExists = await dbContext.Categories.AnyAsync(category => category.Id == parentId, cancellationToken);
@@ -48,6 +51,8 @@ public sealed class CreateCategoryService(ApplicationDbContext dbContext) : ICre
         {
             throw new InvalidOperationException(message);
         }
+
+        await transaction.CommitAsync(cancellationToken);
         return new CreatedCategoryDto(
             category.Id,
             category.Name,

@@ -12,4 +12,6 @@ public sealed record ProductListItemDto(
     string CategoryName,
     string CategorySlug,
     string? PrimaryImageUrl,
-    string Kind);
+    string Kind,
+    string? Grape,
+    decimal? AlcoholPercent);

@@ -88,6 +88,52 @@ public sealed class ProductCatalogQueriesTests(PostgresFixture fixture) : Databa
         Assert.Null(await queries.GetPackComponentsAsync(GetPackComponentsQuery.Create("fuera")));
     }
 
+    [Fact]
+    public async Task Projects_grape_and_alcohol_for_wines_and_nulls_otherwise()
+    {
+        await using var scope = Fixture.Factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var category = new Category(Guid.NewGuid(), "Ficha", "ficha", null, true);
+        var now = DateTimeOffset.UtcNow;
+        var rufete = Item(category.Id, "W-RUFETE", "Rufete", 18m, ProductKind.Wine, now);
+        var empty = Item(category.Id, "W-NULL", "Sin datos", 19m, ProductKind.Wine, now);
+        var withoutProfile = Item(category.Id, "W-SINFICHA", "Sin ficha", 17m, ProductKind.Wine, now);
+        var standard = Item(category.Id, "S-STD", "Estándar", 8m, ProductKind.Standard, now);
+        db.Categories.Add(category);
+        db.Products.AddRange(rufete, empty, withoutProfile, standard);
+        db.Wines.AddRange(
+            new Wine(rufete.Id, null, "Rufete", 13.5m),
+            new Wine(empty.Id, null, null, null));
+        await db.SaveChangesAsync();
+
+        var queries = scope.ServiceProvider.GetRequiredService<IProductCatalogQueries>();
+        var listed = await queries.GetProductsAsync(GetProductsQuery.Create(pageSize: 20));
+        var byReference = listed.Items.ToDictionary(item => item.Reference);
+
+        AssertWineFacts(byReference["W-RUFETE"], "Rufete", 13.5m);
+        AssertWineFacts(byReference["W-NULL"], null, null);
+        AssertWineFacts(byReference["W-SINFICHA"], null, null);
+        AssertWineFacts(byReference["S-STD"], null, null);
+
+        AssertWineFacts(await RequireBySlug(queries, "w-rufete"), "Rufete", 13.5m);
+        AssertWineFacts(await RequireBySlug(queries, "w-null"), null, null);
+        AssertWineFacts(await RequireBySlug(queries, "w-sinficha"), null, null);
+        AssertWineFacts(await RequireBySlug(queries, "s-std"), null, null);
+    }
+
+    private static async Task<ProductListItemDto> RequireBySlug(IProductCatalogQueries queries, string slug)
+    {
+        var item = await queries.GetProductBySlugAsync(GetProductBySlugQuery.Create(slug));
+        Assert.NotNull(item);
+        return item;
+    }
+
+    private static void AssertWineFacts(ProductListItemDto item, string? grape, decimal? alcoholPercent)
+    {
+        Assert.Equal(grape, item.Grape);
+        Assert.Equal(alcoholPercent, item.AlcoholPercent);
+    }
+
     private static Product Item(
         Guid categoryId,
         string reference,

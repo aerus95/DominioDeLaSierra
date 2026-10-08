@@ -3,6 +3,8 @@ using DominioDeLaSierra.Domain;
 using DominioDeLaSierra.Application.Admin;
 using DominioDeLaSierra.Application.Common;
 using DominioDeLaSierra.Application.Categories.CreateCategory;
+using DominioDeLaSierra.Application.Categories.DeleteCategory;
+using DominioDeLaSierra.Application.Categories.UpdateCategory;
 using DominioDeLaSierra.Application.Products.ClearPrimaryImage;
 using DominioDeLaSierra.Application.Products.CreateProduct;
 using DominioDeLaSierra.Application.Products.ImportProducts;
@@ -21,6 +23,8 @@ namespace DominioDeLaSierra.Api.Pages.Admin;
 public sealed class IndexModel(
     IAdminCatalogQueries adminCatalogQueries,
     ICreateCategory createCategory,
+    IUpdateCategory updateCategory,
+    IDeleteCategory deleteCategory,
     ICreateProduct createProduct,
     ISetProductPrimaryImage setPrimaryImage,
     IClearProductPrimaryImage clearPrimaryImage,
@@ -29,7 +33,23 @@ public sealed class IndexModel(
     IUpdateProduct updateProduct) : PageModel
 {
     public IReadOnlyList<AdminCategoryDto> Categories { get; private set; } = [];
-    public IReadOnlyList<AdminProductDto> Products { get; private set; } = [];
+    public AdminListResult<AdminCategoryDto> CategoryResults { get; private set; } = new([], 0);
+    public AdminListResult<AdminProductDto> ProductResults { get; private set; } = new([], 0);
+    public Dictionary<string, string> CatalogRoutes { get; private set; } = new();
+    public string? ProductQuery { get; private set; }
+    public Guid? ProductCategoryId { get; private set; }
+    public ProductKind? ProductKindFilter { get; private set; }
+    public bool? ProductActive { get; private set; }
+    public string? CategoryQuery { get; private set; }
+    public bool? CategoryActive { get; private set; }
+    public Guid? CategoryParentId { get; private set; }
+    public bool CategoryRootsOnly { get; private set; }
+    public string? ProductKindValue => ProductKindFilter?.ToString();
+    public string? ProductActiveValue => ActiveValue(ProductActive);
+    public string? CategoryActiveValue => ActiveValue(CategoryActive);
+    public string? CategoryParentValue => CategoryRootsOnly ? "none" : CategoryParentId?.ToString();
+    public string ClearProductFiltersUrl => Url.Page(null, ToRouteValues(CategoryRoutes())) ?? "/admin";
+    public string ClearCategoryFiltersUrl => Url.Page(null, ToRouteValues(ProductRoutes())) ?? "/admin";
 
     [BindProperty]
     public CategoryForm InputCategory { get; set; } = new();
@@ -48,9 +68,26 @@ public sealed class IndexModel(
 
     public async Task<IActionResult> OnGetAsync(CancellationToken cancellationToken)
     {
+        ReadFilters();
         await LoadAsync(cancellationToken);
         return Page();
     }
+
+    public async Task<IActionResult> OnGetCategoryRowsAsync(CancellationToken cancellationToken)
+    {
+        ReadFilters();
+        await LoadCategoriesAsync(cancellationToken);
+        return Partial("_CategoryFragment", this);
+    }
+
+    public async Task<IActionResult> OnGetProductRowsAsync(CancellationToken cancellationToken)
+    {
+        ReadFilters();
+        await LoadProductsAsync(cancellationToken);
+        return Partial("_ProductFragment", this);
+    }
+
+    public static string? SelectedAttr(bool selected) => selected ? "selected" : null;
 
     public async Task<IActionResult> OnGetEditProductAsync(Guid productId, CancellationToken cancellationToken)
     {
@@ -192,6 +229,66 @@ public sealed class IndexModel(
         }
     }
 
+    public async Task<IActionResult> OnPostUpdateCategoryAsync(Guid categoryId, CancellationToken cancellationToken)
+    {
+        if (!CanWrite)
+        {
+            return JsonFailure("No tienes permiso para modificar el catálogo.", StatusCodes.Status403Forbidden);
+        }
+
+        if (AdminPostedValues.HasBindingError(ModelState, "InputCategory.Active"))
+        {
+            return JsonFailure("El estado de la categoría no es válido.", StatusCodes.Status400BadRequest);
+        }
+
+        if (!AdminPostedValues.TryReadGuid(ModelState, nameof(categoryId), categoryId, out var id))
+        {
+            return JsonFailure("La categoría no es válida.", StatusCodes.Status400BadRequest);
+        }
+
+        if (!TryReadOptionalParent(out var parentId, out var parentError))
+        {
+            return JsonFailure(parentError, StatusCodes.Status400BadRequest);
+        }
+
+        try
+        {
+            var updated = await updateCategory.ExecuteAsync(
+                new UpdateCategoryCommand(id, InputCategory.Name, InputCategory.Slug, parentId, InputCategory.Active),
+                cancellationToken);
+            StatusMessage = $"Categoría «{updated.Name}» actualizada correctamente.";
+            return new JsonResult(new { ok = true });
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            return JsonFailure(exception.Message, StatusCodes.Status400BadRequest);
+        }
+    }
+
+    public async Task<IActionResult> OnPostDeleteCategoryAsync(Guid categoryId, CancellationToken cancellationToken)
+    {
+        if (!CanWrite)
+        {
+            return JsonFailure("No tienes permiso para modificar el catálogo.", StatusCodes.Status403Forbidden);
+        }
+
+        if (!AdminPostedValues.TryReadGuid(ModelState, nameof(categoryId), categoryId, out var id))
+        {
+            return JsonFailure("La categoría no es válida.", StatusCodes.Status400BadRequest);
+        }
+
+        try
+        {
+            var deleted = await deleteCategory.ExecuteAsync(new DeleteCategoryCommand(id), cancellationToken);
+            StatusMessage = $"Categoría «{deleted.Name}» eliminada correctamente.";
+            return new JsonResult(new { ok = true });
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            return JsonFailure(exception.Message, StatusCodes.Status400BadRequest);
+        }
+    }
+
     public async Task<IActionResult> OnPostCreateProductAsync(IFormFile? primaryImage, CancellationToken cancellationToken)
     {
         if (!CanWrite)
@@ -320,16 +417,17 @@ public sealed class IndexModel(
         IFormFile? primaryImage,
         CancellationToken cancellationToken)
     {
+        ReadFilters();
         if (!CanWrite)
         {
             ErrorMessage = "No tienes permiso para modificar el catálogo.";
-            return RedirectToPage();
+            return RedirectToCatalog();
         }
 
         if (!AdminPostedValues.TryReadGuid(ModelState, nameof(imageProductId), imageProductId, out var productId))
         {
             ErrorMessage = "El producto no es válido.";
-            return RedirectToPage();
+            return RedirectToCatalog();
         }
 
         try
@@ -363,23 +461,24 @@ public sealed class IndexModel(
             ErrorMessage = exception.Message;
         }
 
-        return RedirectToPage();
+        return RedirectToCatalog();
     }
 
     public async Task<IActionResult> OnPostDeletePrimaryImageAsync(
         Guid imageProductId,
         CancellationToken cancellationToken)
     {
+        ReadFilters();
         if (!CanWrite)
         {
             ErrorMessage = "No tienes permiso para modificar el catálogo.";
-            return RedirectToPage();
+            return RedirectToCatalog();
         }
 
         if (!AdminPostedValues.TryReadGuid(ModelState, nameof(imageProductId), imageProductId, out var productId))
         {
             ErrorMessage = "El producto no es válido.";
-            return RedirectToPage();
+            return RedirectToCatalog();
         }
 
         try
@@ -402,7 +501,7 @@ public sealed class IndexModel(
             ErrorMessage = exception.Message;
         }
 
-        return RedirectToPage();
+        return RedirectToCatalog();
     }
 
     public async Task<IActionResult> OnPostValidateProductImportAsync(
@@ -505,9 +604,186 @@ public sealed class IndexModel(
 
     private async Task LoadAsync(CancellationToken cancellationToken)
     {
-        Categories = await adminCatalogQueries.GetCategoriesAsync(cancellationToken);
-        Products = await adminCatalogQueries.GetProductsAsync(cancellationToken);
+        await LoadCategoriesAsync(cancellationToken);
+        await LoadProductsAsync(cancellationToken);
     }
+
+    private async Task LoadCategoriesAsync(CancellationToken cancellationToken)
+    {
+        var categoryQuery = CurrentCategoryQuery();
+        var allCategories = await adminCatalogQueries.GetCategoriesAsync(
+            AdminCategoryListQuery.Unfiltered,
+            cancellationToken);
+        Categories = allCategories.Items;
+        CategoryResults = IsUnfiltered(categoryQuery)
+            ? allCategories
+            : await adminCatalogQueries.GetCategoriesAsync(categoryQuery, cancellationToken);
+    }
+
+    private async Task LoadProductsAsync(CancellationToken cancellationToken)
+    {
+        ProductResults = await adminCatalogQueries.GetProductsAsync(CurrentProductQuery(), cancellationToken);
+    }
+
+    private void ReadFilters()
+    {
+        ProductQuery = AdminListSearch.Normalize(QueryValue("productQuery"));
+        ProductCategoryId = ReadGuid(QueryValue("productCategory"));
+        ProductKindFilter = ReadKind(QueryValue("productKind"));
+        ProductActive = ReadBool(QueryValue("productActive"));
+        CategoryQuery = AdminListSearch.Normalize(QueryValue("categoryQuery"));
+        CategoryActive = ReadBool(QueryValue("categoryActive"));
+        var parent = QueryValue("categoryParent");
+        CategoryRootsOnly = parent is not null && parent.Equals("none", StringComparison.OrdinalIgnoreCase);
+        CategoryParentId = CategoryRootsOnly ? null : ReadGuid(parent);
+        CatalogRoutes = MergeRoutes(ProductRoutes(), CategoryRoutes());
+    }
+
+    private AdminProductListQuery CurrentProductQuery() =>
+        new(ProductQuery, ProductCategoryId, ProductKindFilter, ProductActive);
+
+    private AdminCategoryListQuery CurrentCategoryQuery() =>
+        new(CategoryQuery, CategoryActive, CategoryParentId, CategoryRootsOnly);
+
+    private static bool IsUnfiltered(AdminCategoryListQuery query) =>
+        query.Search is null
+        && query.Active is null
+        && query.ParentCategoryId is null
+        && !query.RootsOnly;
+
+    private string? QueryValue(string key)
+    {
+        if (!Request.Query.TryGetValue(key, out var values) || values.Count == 0)
+        {
+            return null;
+        }
+
+        return values[0];
+    }
+
+    private static Guid? ReadGuid(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw) || !Guid.TryParse(raw, out var id) || id == Guid.Empty)
+        {
+            return null;
+        }
+
+        return id;
+    }
+
+    private static ProductKind? ReadKind(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        return Enum.TryParse<ProductKind>(raw, ignoreCase: true, out var kind) ? kind : null;
+    }
+
+    private static bool? ReadBool(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        if (raw.Equals("true", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (raw.Equals("false", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return null;
+    }
+
+    private static string? ActiveValue(bool? active) => active switch
+    {
+        true => "true",
+        false => "false",
+        _ => null
+    };
+
+    private Dictionary<string, string> ProductRoutes()
+    {
+        var routes = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (ProductQuery is not null)
+        {
+            routes["productQuery"] = ProductQuery;
+        }
+
+        if (ProductCategoryId is Guid categoryId)
+        {
+            routes["productCategory"] = categoryId.ToString();
+        }
+
+        if (ProductKindFilter is ProductKind kind)
+        {
+            routes["productKind"] = kind.ToString();
+        }
+
+        if (ProductActive is bool active)
+        {
+            routes["productActive"] = active ? "true" : "false";
+        }
+
+        return routes;
+    }
+
+    private Dictionary<string, string> CategoryRoutes()
+    {
+        var routes = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (CategoryQuery is not null)
+        {
+            routes["categoryQuery"] = CategoryQuery;
+        }
+
+        if (CategoryActive is bool active)
+        {
+            routes["categoryActive"] = active ? "true" : "false";
+        }
+
+        if (CategoryRootsOnly)
+        {
+            routes["categoryParent"] = "none";
+        }
+        else if (CategoryParentId is Guid parentId)
+        {
+            routes["categoryParent"] = parentId.ToString();
+        }
+
+        return routes;
+    }
+
+    private static Dictionary<string, string> MergeRoutes(
+        Dictionary<string, string> products,
+        Dictionary<string, string> categories)
+    {
+        var routes = new Dictionary<string, string>(products, StringComparer.Ordinal);
+        foreach (var pair in categories)
+        {
+            routes[pair.Key] = pair.Value;
+        }
+
+        return routes;
+    }
+
+    private static RouteValueDictionary ToRouteValues(Dictionary<string, string> routes)
+    {
+        var values = new RouteValueDictionary();
+        foreach (var pair in routes)
+        {
+            values[pair.Key] = pair.Value;
+        }
+
+        return values;
+    }
+
+    private RedirectToPageResult RedirectToCatalog() => RedirectToPage(ToRouteValues(CatalogRoutes));
 
     private bool TryReadOptionalParent(out Guid? parentId, out string error)
     {

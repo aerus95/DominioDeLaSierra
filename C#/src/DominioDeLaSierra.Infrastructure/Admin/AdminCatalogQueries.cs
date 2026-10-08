@@ -9,11 +9,36 @@ namespace DominioDeLaSierra.Infrastructure.Admin;
 
 public sealed class AdminCatalogQueries(ApplicationDbContext dbContext) : IAdminCatalogQueries
 {
-    public async Task<IReadOnlyList<AdminCategoryDto>> GetCategoriesAsync(
+    public async Task<AdminListResult<AdminCategoryDto>> GetCategoriesAsync(
+        AdminCategoryListQuery query,
         CancellationToken cancellationToken = default)
     {
-        return await dbContext.Categories
-            .AsNoTracking()
+        var categories = dbContext.Categories.AsNoTracking();
+        var search = AdminListSearch.Normalize(query.Search);
+        if (search is not null)
+        {
+            var pattern = LikePattern(search);
+            categories = categories.Where(category =>
+                EF.Functions.ILike(category.Name, pattern, LikeEscape)
+                || EF.Functions.ILike(category.Slug, pattern, LikeEscape));
+        }
+
+        if (query.Active is bool active)
+        {
+            categories = categories.Where(category => category.Active == active);
+        }
+
+        if (query.RootsOnly)
+        {
+            categories = categories.Where(category => category.ParentCategoryId == null);
+        }
+        else if (query.ParentCategoryId is Guid parentId && parentId != Guid.Empty)
+        {
+            categories = categories.Where(category => category.ParentCategoryId == parentId);
+        }
+
+        var totalCount = await categories.CountAsync(cancellationToken);
+        var items = await categories
             .OrderBy(category => category.Name)
             .Select(category => new AdminCategoryDto(
                 category.Id,
@@ -22,13 +47,44 @@ public sealed class AdminCatalogQueries(ApplicationDbContext dbContext) : IAdmin
                 category.ParentCategoryId,
                 category.Active))
             .ToListAsync(cancellationToken);
+
+        return new AdminListResult<AdminCategoryDto>(items, totalCount);
     }
 
-    public async Task<IReadOnlyList<AdminProductDto>> GetProductsAsync(
+    public async Task<AdminListResult<AdminProductDto>> GetProductsAsync(
+        AdminProductListQuery query,
         CancellationToken cancellationToken = default)
     {
-        return await dbContext.Products
-            .AsNoTracking()
+        var products = dbContext.Products.AsNoTracking();
+        var search = AdminListSearch.Normalize(query.Search);
+        if (search is not null)
+        {
+            var pattern = LikePattern(search);
+            products = products.Where(product =>
+                EF.Functions.ILike(product.Name, pattern, LikeEscape)
+                || EF.Functions.ILike(product.Reference, pattern, LikeEscape)
+                || EF.Functions.ILike(product.Description, pattern, LikeEscape)
+                || (product.Kind == ProductKind.Pack && product.Components.Any(component =>
+                    EF.Functions.ILike(component.ComponentProduct.Name, pattern, LikeEscape))));
+        }
+
+        if (query.CategoryId is Guid categoryId && categoryId != Guid.Empty)
+        {
+            products = products.Where(product => product.CategoryId == categoryId);
+        }
+
+        if (query.Kind is ProductKind kind)
+        {
+            products = products.Where(product => product.Kind == kind);
+        }
+
+        if (query.Active is bool active)
+        {
+            products = products.Where(product => product.Active == active);
+        }
+
+        var totalCount = await products.CountAsync(cancellationToken);
+        var items = await products
             .OrderByDescending(product => product.UpdatedAt)
             .ThenBy(product => product.Name)
             .Select(product => new AdminProductDto(
@@ -52,6 +108,8 @@ public sealed class AdminCatalogQueries(ApplicationDbContext dbContext) : IAdmin
                     .Select(stock => (int?)stock.Quantity)
                     .FirstOrDefault()))
             .ToListAsync(cancellationToken);
+
+        return new AdminListResult<AdminProductDto>(items, totalCount);
     }
 
     public async Task<AdminProductEditorDto?> GetProductEditorAsync(
@@ -175,6 +233,17 @@ public sealed class AdminCatalogQueries(ApplicationDbContext dbContext) : IAdmin
                 item.Kind.ToString(),
                 item.Active))
             .ToList();
+    }
+
+    private const string LikeEscape = "\\";
+
+    private static string LikePattern(string search)
+    {
+        var escaped = search
+            .Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("%", "\\%", StringComparison.Ordinal)
+            .Replace("_", "\\_", StringComparison.Ordinal);
+        return $"%{escaped}%";
     }
 
     private static string IndexKind(ProductKind kind) => kind switch

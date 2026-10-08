@@ -5,6 +5,7 @@ import { environment } from '../../environments/environment';
 import { bottleImage } from './product-visual';
 import { previewProducts, previewCategories } from './preview-catalog';
 import { Category, PackComponent, Product, ProductKindName } from './models';
+import { wineAlcohol, wineGrape } from './wine-display';
 
 interface ProductListItemDto {
   id: string;
@@ -19,6 +20,8 @@ interface ProductListItemDto {
   categorySlug: string;
   primaryImageUrl: string | null;
   kind: ProductKindName;
+  grape: string | null;
+  alcoholPercent: number | null;
 }
 
 interface PackComponentDto {
@@ -227,8 +230,8 @@ export class CatalogService {
       price: item.price,
       kind: item.kind,
       vintage: '',
-      grape: '',
-      alcohol: '',
+      grape: wineGrape(item.kind, item.grape),
+      alcohol: wineAlcohol(item.kind, item.alcoholPercent),
       image: item.primaryImageUrl ? this.mediaUrl(item.primaryImageUrl) : bottleImage(item),
       accent: '#8f3541',
       featured: true
