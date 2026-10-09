@@ -1,0 +1,4 @@
+@model OrderListModel
+<template id="order-fragment" data-count="@Model.Results.TotalCount" data-page="@Model.Results.Page">
+    <partial name="_OrderRows" model="Model" />
+</template>

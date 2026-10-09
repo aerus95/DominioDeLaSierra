@@ -36,6 +36,12 @@ public static class TestCatalog
         await db.Database.ExecuteSqlRawAsync(
             """
             TRUNCATE TABLE
+                "StockReservations",
+                "PaymentEvents",
+                "Payments",
+                "OrderItemComponents",
+                "OrderItems",
+                "Orders",
                 "StockMovements",
                 "Stocks",
                 "ProductComponents",

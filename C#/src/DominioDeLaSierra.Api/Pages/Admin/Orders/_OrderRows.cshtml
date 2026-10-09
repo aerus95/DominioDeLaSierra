@@ -1,0 +1,57 @@
+@model OrderListModel
+<div class="table-scroll">
+    <table>
+        <thead>
+            <tr>
+                <th>Número</th>
+                <th>Fecha de creación</th>
+                <th>Cliente</th>
+                <th>Total</th>
+                <th>Pago</th>
+                <th>Preparación</th>
+            </tr>
+        </thead>
+        <tbody>
+            @if (Model.Results.Items.Count == 0)
+            {
+                <tr>
+                    <td colspan="6" class="muted">No hay pedidos con estos filtros.</td>
+                </tr>
+            }
+            else
+            {
+                @foreach (var order in Model.Results.Items)
+                {
+                    <tr>
+                        <td><a class="order-link" href="/admin/orders/@order.Id">@order.Number</a></td>
+                        <td>@OrderPresentation.When(order.CreatedAt)</td>
+                        <td>@order.CustomerName</td>
+                        <td>@OrderPresentation.Money(order.TotalCents)</td>
+                        <td>
+                            <span class="badge @OrderPresentation.StatusClass(order.Status)">@OrderPresentation.Status(order.Status)</span>
+                            @if (order.PaymentStatus is { } payment)
+                            {
+                                <span class="muted">@OrderPresentation.Payment(payment)</span>
+                            }
+                        </td>
+                        <td><span class="badge @OrderPresentation.FulfillmentClass(order.FulfillmentStatus)">@OrderPresentation.Fulfillment(order.FulfillmentStatus)</span></td>
+                    </tr>
+                }
+            }
+        </tbody>
+    </table>
+</div>
+@if (Model.Results.PageCount > 1)
+{
+    <nav class="pager" aria-label="Páginas de pedidos">
+        @if (Model.Results.Page > 1)
+        {
+            <a class="order-page" data-page="@(Model.Results.Page - 1)" href="@Model.PageUrl(Model.Results.Page - 1)">Anterior</a>
+        }
+        <span class="current">Página @Model.Results.Page de @Model.Results.PageCount</span>
+        @if (Model.Results.Page < Model.Results.PageCount)
+        {
+            <a class="order-page" data-page="@(Model.Results.Page + 1)" href="@Model.PageUrl(Model.Results.Page + 1)">Siguiente</a>
+        }
+    </nav>
+}

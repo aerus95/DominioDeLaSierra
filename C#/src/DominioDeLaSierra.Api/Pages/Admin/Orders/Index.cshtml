@@ -1,0 +1,96 @@
+@page "/admin/orders"
+@model OrderListModel
+@{
+    ViewData["Title"] = "Pedidos";
+}
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Pedidos · Dominio de la Sierra</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=ds-signature-4">
+    <partial name="_OrderStyles" />
+</head>
+<body>
+    <partial name="~/Pages/Admin/_AdminHeader.cshtml" />
+    <header class="page">
+        <p>Dominio de la Sierra · Administración</p>
+        <h1>Pedidos</h1>
+        <small>La preparación no modifica el pago ni el stock.</small>
+    </header>
+    <div class="wrap">
+        @if (!Model.CanWrite)
+        {
+            <p class="muted">Tu rol permite consultar pedidos, no cambiar su preparación.</p>
+        }
+        <section class="card">
+            <h2>Listado (<span id="order-count">@Model.Results.TotalCount</span>)</h2>
+            <form id="order-filters" class="filters" method="get">
+                <div class="filter-field grow">
+                    <label for="order-number">Número</label>
+                    <input id="order-number" name="number" value="@Model.Number" maxlength="40" autocomplete="off">
+                </div>
+                <div class="filter-field grow">
+                    <label for="order-customer">Cliente</label>
+                    <input id="order-customer" name="customer" value="@Model.Customer" maxlength="150" autocomplete="off">
+                </div>
+                <div class="filter-field">
+                    <label for="order-status">Estado</label>
+                    <select id="order-status" name="status">
+                        <option value="">Todos</option>
+                        <option value="PendingPayment" selected="@OrderListModel.SelectedAttr(Model.Status == "PendingPayment")">Pendiente de pago</option>
+                        <option value="Paid" selected="@OrderListModel.SelectedAttr(Model.Status == "Paid")">Pagado</option>
+                        <option value="Cancelled" selected="@OrderListModel.SelectedAttr(Model.Status == "Cancelled")">Cancelado</option>
+                        <option value="Expired" selected="@OrderListModel.SelectedAttr(Model.Status == "Expired")">Caducado</option>
+                    </select>
+                </div>
+                <div class="filter-field">
+                    <label for="order-fulfillment">Preparación</label>
+                    <select id="order-fulfillment" name="fulfillment">
+                        <option value="">Todas</option>
+                        <option value="Unfulfilled" selected="@OrderListModel.SelectedAttr(Model.Fulfillment == "Unfulfilled")">Sin preparar</option>
+                        <option value="Preparing" selected="@OrderListModel.SelectedAttr(Model.Fulfillment == "Preparing")">En preparación</option>
+                        <option value="Prepared" selected="@OrderListModel.SelectedAttr(Model.Fulfillment == "Prepared")">Preparado</option>
+                        <option value="Shipped" selected="@OrderListModel.SelectedAttr(Model.Fulfillment == "Shipped")">Enviado</option>
+                    </select>
+                </div>
+                <div class="filter-field">
+                    <label for="order-payment">Pago</label>
+                    <select id="order-payment" name="payment">
+                        <option value="">Todos</option>
+                        <option value="Pending" selected="@OrderListModel.SelectedAttr(Model.Payment == "Pending")">Pendiente</option>
+                        <option value="Succeeded" selected="@OrderListModel.SelectedAttr(Model.Payment == "Succeeded")">Cobrado</option>
+                        <option value="Failed" selected="@OrderListModel.SelectedAttr(Model.Payment == "Failed")">Fallido</option>
+                        <option value="Cancelled" selected="@OrderListModel.SelectedAttr(Model.Payment == "Cancelled")">Cancelado</option>
+                        <option value="Refunded" selected="@OrderListModel.SelectedAttr(Model.Payment == "Refunded")">Reembolsado</option>
+                    </select>
+                </div>
+                <div class="filter-field">
+                    <label for="order-from">Desde</label>
+                    <input id="order-from" name="from" type="date" value="@Model.From">
+                </div>
+                <div class="filter-field">
+                    <label for="order-to">Hasta</label>
+                    <input id="order-to" name="to" type="date" value="@Model.To">
+                </div>
+                <button type="submit">Filtrar</button>
+                <a class="clear-link" id="clear-order-filters" href="/admin/orders">Limpiar filtros</a>
+            </form>
+            <p id="order-filter-status" class="filter-status" hidden>Buscando…</p>
+            <p id="order-filter-error" class="filter-error" hidden></p>
+            @if (!string.IsNullOrWhiteSpace(Model.FilterMessage))
+            {
+                <p class="flash err">@Model.FilterMessage</p>
+            }
+            <div id="order-results" class="live-results">
+                <div id="order-rows">
+                    <partial name="_OrderRows" model="Model" />
+                </div>
+            </div>
+        </section>
+    </div>
+    <script src="/js/admin-live-filters.js"></script>
+    <script src="/js/admin-order-filters.js"></script>
+</body>
+</html>

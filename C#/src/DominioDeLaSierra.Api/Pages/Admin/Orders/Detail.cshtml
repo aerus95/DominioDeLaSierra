@@ -1,0 +1,254 @@
+@page "/admin/orders/{id:guid}"
+@model DetailModel
+@{
+    ViewData["Title"] = Model.Order?.Number ?? "Pedido";
+    var order = Model.Order;
+    var next = order is null ? null : OrderPresentation.Next(order.FulfillmentStatus);
+}
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>@(order?.Number ?? "Pedido") · Dominio de la Sierra</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=ds-signature-4">
+    <partial name="_OrderStyles" />
+</head>
+<body>
+    <partial name="~/Pages/Admin/_AdminHeader.cshtml" />
+    <header class="page">
+        <p>Dominio de la Sierra · Administración</p>
+        <h1>@(order?.Number ?? "Pedido")</h1>
+        <small><a class="back" href="/admin/orders">Volver al listado</a></small>
+    </header>
+    <div class="wrap">
+        <form hidden>@Html.AntiForgeryToken()</form>
+        @if (!string.IsNullOrWhiteSpace(Model.StatusMessage))
+        {
+            <div class="flash ok">@Model.StatusMessage</div>
+        }
+        @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+        {
+            <div class="flash err">@Model.ErrorMessage</div>
+        }
+        @if (order is null)
+        {
+            <section class="card">
+                <h2>Pedido no encontrado</h2>
+                <p class="muted">El pedido no existe.</p>
+            </section>
+        }
+        else
+        {
+            <section class="card">
+                <h2>Resumen</h2>
+                <dl class="facts">
+                    <div><dt>Número</dt><dd>@order.Number</dd></div>
+                    <div><dt>Fecha de creación</dt><dd>@OrderPresentation.When(order.CreatedAt)</dd></div>
+                    <div><dt>Estado</dt><dd><span class="badge @OrderPresentation.StatusClass(order.Status)">@OrderPresentation.Status(order.Status)</span></dd></div>
+                    <div><dt>Preparación</dt><dd><span class="badge @OrderPresentation.FulfillmentClass(order.FulfillmentStatus)">@OrderPresentation.Fulfillment(order.FulfillmentStatus)</span></dd></div>
+                    <div><dt>Caducidad de la reserva</dt><dd>@OrderPresentation.When(order.ReservationExpiresAt)</dd></div>
+                </dl>
+            </section>
+
+            <section class="card">
+                <h2>Contacto y entrega</h2>
+                <dl class="facts">
+                    <div><dt>Cliente</dt><dd>@order.CustomerName</dd></div>
+                    <div><dt>Correo</dt><dd>@order.Email</dd></div>
+                    <div><dt>Teléfono</dt><dd>@order.Phone</dd></div>
+                    <div><dt>Dirección</dt><dd>@order.AddressLine</dd></div>
+                    <div><dt>Código postal</dt><dd>@order.PostalCode</dd></div>
+                    <div><dt>Localidad</dt><dd>@order.City</dd></div>
+                    <div><dt>Provincia</dt><dd>@order.Province</dd></div>
+                    <div><dt>País</dt><dd>@order.CountryCode</dd></div>
+                    @if (!string.IsNullOrWhiteSpace(order.DeliveryNotes))
+                    {
+                        <div><dt>Indicaciones</dt><dd>@order.DeliveryNotes</dd></div>
+                    }
+                </dl>
+            </section>
+
+            <section class="card">
+                <h2>Productos</h2>
+                <div class="table-scroll">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Producto</th>
+                                <th>Cantidad</th>
+                                <th>Precio</th>
+                                <th>Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var line in order.Lines)
+                            {
+                                <tr>
+                                    <td>
+                                        @line.Name
+                                        <div class="muted">@line.Reference</div>
+                                        @if (line.Kind == DominioDeLaSierra.Domain.ProductKind.Pack)
+                                        {
+                                            <ul class="components">
+                                                @foreach (var component in line.Components)
+                                                {
+                                                    <li>@component.Name · @component.Reference · @component.QuantityPerPack por pack</li>
+                                                }
+                                            </ul>
+                                        }
+                                    </td>
+                                    <td>@line.Quantity</td>
+                                    <td>@OrderPresentation.Money(line.UnitPriceCents)</td>
+                                    <td>@OrderPresentation.Money(line.LineTotalCents)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="card">
+                <h2>Importes</h2>
+                <dl class="facts">
+                    <div><dt>Subtotal</dt><dd>@OrderPresentation.Money(order.ProductSubtotalCents)</dd></div>
+                    <div><dt>IVA de productos</dt><dd>@OrderPresentation.Money(order.ProductVatCents)</dd></div>
+                    <div><dt>Gastos de envío</dt><dd>@OrderPresentation.Money(order.ShippingCents)</dd></div>
+                    <div>
+                        <dt>IVA del envío</dt>
+                        <dd>@(order.ShippingVatRate is null || order.ShippingVatCents is null ? "Pendiente" : OrderPresentation.Money(order.ShippingVatCents.Value))</dd>
+                    </div>
+                    <div><dt>Total</dt><dd>@OrderPresentation.Money(order.TotalCents)</dd></div>
+                </dl>
+            </section>
+
+            <section class="card">
+                <h2>Pago</h2>
+                @if (order.Payments.Count == 0)
+                {
+                    <p class="muted">Este pedido no tiene un pago registrado.</p>
+                }
+                else
+                {
+                    @foreach (var payment in order.Payments)
+                    {
+                        <dl class="facts">
+                            <div><dt>Estado del pago</dt><dd>@OrderPresentation.Payment(payment.Status)</dd></div>
+                            <div><dt>Importe</dt><dd>@OrderPresentation.Money(payment.AmountCents)</dd></div>
+                            <div><dt>Moneda</dt><dd>@payment.Currency</dd></div>
+                            <div><dt>Sesión</dt><dd>@(payment.CheckoutSessionId ?? "Sin sesión")</dd></div>
+                            <div><dt>Intento</dt><dd>@(payment.PaymentIntentId ?? "Sin intento")</dd></div>
+                            <div><dt>Creado</dt><dd>@OrderPresentation.When(payment.CreatedAt)</dd></div>
+                            @if (payment.SucceededAt is { } succeededAt)
+                            {
+                                <div><dt>Cobrado</dt><dd>@OrderPresentation.When(succeededAt)</dd></div>
+                            }
+                        </dl>
+                        @foreach (var incident in payment.Incidents)
+                        {
+                            <p class="flash err">@incident.EventType: @incident.AttentionReason</p>
+                        }
+                    }
+                }
+            </section>
+
+            <section class="card">
+                <h2>Reserva de stock</h2>
+                @if (order.Reservation is null)
+                {
+                    <p class="muted">Este pedido no tiene una reserva de stock.</p>
+                }
+                else
+                {
+                    <dl class="facts">
+                        <div><dt>Estado</dt><dd>@OrderPresentation.Reservation(order.Reservation.Status)</dd></div>
+                        <div><dt>Reservada</dt><dd>@OrderPresentation.When(order.Reservation.ReservedAt)</dd></div>
+                        @if (order.Reservation.ConfirmationStartedAt is { } started)
+                        {
+                            <div><dt>Confirmación iniciada</dt><dd>@OrderPresentation.When(started)</dd></div>
+                        }
+                        @if (order.Reservation.ConfirmedAt is { } confirmed)
+                        {
+                            <div><dt>Confirmada</dt><dd>@OrderPresentation.When(confirmed)</dd></div>
+                        }
+                        @if (order.Reservation.ReleasedAt is { } released)
+                        {
+                            <div><dt>Liberada</dt><dd>@OrderPresentation.When(released)</dd></div>
+                        }
+                    </dl>
+                }
+            </section>
+
+            <section class="card">
+                <h2>Preparación y envío</h2>
+                @if (!Model.CanWrite)
+                {
+                    <p class="muted">Tu rol permite consultar pedidos, no cambiar su preparación.</p>
+                }
+                else if (order.Status != DominioDeLaSierra.Domain.OrderStatus.Paid)
+                {
+                    <p class="muted">La preparación solo está disponible cuando el pedido está pagado.</p>
+                }
+                else if (next is { } target)
+                {
+                    <form class="ship-form" method="post" asp-page-handler="Advance">
+                        <div>
+                            <label for="carrier">Transportista</label>
+                            <input id="carrier" name="carrier" maxlength="80" value="@order.Carrier" autocomplete="off">
+                        </div>
+                        <div>
+                            <label for="trackingNumber">Número de seguimiento</label>
+                            <input id="trackingNumber" name="trackingNumber" maxlength="80" value="@order.TrackingNumber" autocomplete="off">
+                        </div>
+                        <div class="full">
+                            <input type="hidden" name="target" value="@target">
+                            <button type="submit">Marcar como @OrderPresentation.Fulfillment(target).ToLowerInvariant()</button>
+                        </div>
+                    </form>
+                }
+                else
+                {
+                    <p class="muted">El pedido ya está enviado.</p>
+                    @if (!string.IsNullOrWhiteSpace(order.Carrier) || !string.IsNullOrWhiteSpace(order.TrackingNumber))
+                    {
+                        <p>@order.Carrier @order.TrackingNumber</p>
+                    }
+                }
+
+                @if (order.Changes.Count == 0)
+                {
+                    <p class="muted">Todavía no hay cambios de preparación.</p>
+                }
+                else
+                {
+                    <div class="table-scroll">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Fecha</th>
+                                    <th>Cambio</th>
+                                    <th>Responsable</th>
+                                    <th>Transportista</th>
+                                    <th>Seguimiento</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var change in order.Changes)
+                                {
+                                    <tr>
+                                        <td>@OrderPresentation.When(change.OccurredAt)</td>
+                                        <td>@OrderPresentation.Fulfillment(change.FromStatus) → @OrderPresentation.Fulfillment(change.ToStatus)</td>
+                                        <td>@change.ActorName</td>
+                                        <td>@(change.Carrier ?? "—")</td>
+                                        <td>@(change.TrackingNumber ?? "—")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </section>
+        }
+    </div>
+</body>
+</html>

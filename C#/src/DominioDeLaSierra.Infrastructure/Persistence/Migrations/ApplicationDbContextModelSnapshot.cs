@@ -97,6 +97,436 @@ namespace DominioDeLaSierra.Infrastructure.Persistence.Migrations
                     b.ToTable("Categories", (string)null);
                 });
 
+            modelBuilder.Entity("DominioDeLaSierra.Domain.Entities.FulfillmentTransition", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ActorUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Carrier")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("FromStatus")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ToStatus")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("TrackingNumber")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrderId", "OccurredAt");
+
+                    b.ToTable("FulfillmentTransitions", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_FulfillmentTransitions_Step", "(\"FromStatus\" = 'Unfulfilled' AND \"ToStatus\" = 'Preparing')\r\nOR (\"FromStatus\" = 'Preparing' AND \"ToStatus\" = 'Prepared')\r\nOR (\"FromStatus\" = 'Prepared' AND \"ToStatus\" = 'Shipped')");
+                        });
+                });
+
+            modelBuilder.Entity("DominioDeLaSierra.Domain.Entities.Order", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AddressLine")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTimeOffset?>("CancelledAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Carrier")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("CheckoutAccessTokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("City")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<string>("CountryCode")
+                        .IsRequired()
+                        .HasMaxLength(2)
+                        .HasColumnType("character varying(2)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)");
+
+                    b.Property<string>("CustomerName")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)");
+
+                    b.Property<string>("DeliveryNotes")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(254)
+                        .HasColumnType("character varying(254)");
+
+                    b.Property<DateTimeOffset?>("ExpiredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("FulfillmentStatus")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasDefaultValue("Unfulfilled");
+
+                    b.Property<DateTimeOffset?>("FulfillmentUpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("FulfillmentUpdatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<string>("Number")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<DateTimeOffset?>("PaidAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Phone")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("PostalCode")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.Property<long>("ProductSubtotalCents")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("ProductTaxableBaseCents")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("ProductVatCents")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Province")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<DateTimeOffset>("ReservationExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("ShippingCents")
+                        .HasColumnType("bigint");
+
+                    b.Property<long?>("ShippingTaxableBaseCents")
+                        .HasColumnType("bigint");
+
+                    b.Property<long?>("ShippingVatCents")
+                        .HasColumnType("bigint");
+
+                    b.Property<decimal?>("ShippingVatRate")
+                        .HasColumnType("numeric(5,2)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<long>("TotalCents")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("TrackingNumber")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CheckoutAccessTokenHash")
+                        .IsUnique();
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("Email");
+
+                    b.HasIndex("IdempotencyKey")
+                        .IsUnique();
+
+                    b.HasIndex("Number")
+                        .IsUnique();
+
+                    b.HasIndex("ReservationExpiresAt")
+                        .HasFilter("\"Status\" = 'PendingPayment'");
+
+                    b.ToTable("Orders", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_Orders_Amounts", "\"ProductSubtotalCents\" >= 0\r\nAND \"ProductTaxableBaseCents\" >= 0\r\nAND \"ProductVatCents\" >= 0\r\nAND \"ShippingCents\" >= 0\r\nAND \"TotalCents\" >= 0\r\nAND \"ProductTaxableBaseCents\" + \"ProductVatCents\" = \"ProductSubtotalCents\"\r\nAND \"TotalCents\" = \"ProductSubtotalCents\" + \"ShippingCents\"");
+
+                            t.HasCheckConstraint("CK_Orders_Country", "\"CountryCode\" = 'ES'");
+
+                            t.HasCheckConstraint("CK_Orders_Currency", "\"Currency\" = 'EUR'");
+
+                            t.HasCheckConstraint("CK_Orders_Fulfillment", "\"FulfillmentStatus\" IN ('Unfulfilled', 'Preparing', 'Prepared', 'Shipped')\r\nAND (\r\n    (\"Status\" = 'Paid')\r\n    OR (\"FulfillmentStatus\" = 'Unfulfilled'\r\n        AND \"Carrier\" IS NULL\r\n        AND \"TrackingNumber\" IS NULL\r\n        AND \"FulfillmentUpdatedAt\" IS NULL\r\n        AND \"FulfillmentUpdatedByUserId\" IS NULL)\r\n)\r\nAND (\r\n    (\"FulfillmentStatus\" = 'Unfulfilled'\r\n        AND \"FulfillmentUpdatedAt\" IS NULL\r\n        AND \"FulfillmentUpdatedByUserId\" IS NULL)\r\n    OR (\"FulfillmentStatus\" <> 'Unfulfilled'\r\n        AND \"FulfillmentUpdatedAt\" IS NOT NULL\r\n        AND \"FulfillmentUpdatedByUserId\" IS NOT NULL)\r\n)");
+
+                            t.HasCheckConstraint("CK_Orders_Reservation", "\"ReservationExpiresAt\" > \"CreatedAt\"");
+
+                            t.HasCheckConstraint("CK_Orders_ShippingVat", "(\"ShippingVatRate\" IS NULL AND \"ShippingTaxableBaseCents\" IS NULL AND \"ShippingVatCents\" IS NULL)\r\nOR (\"ShippingVatRate\" IS NOT NULL AND \"ShippingTaxableBaseCents\" IS NOT NULL AND \"ShippingVatCents\" IS NOT NULL\r\n    AND \"ShippingTaxableBaseCents\" >= 0 AND \"ShippingVatCents\" >= 0\r\n    AND \"ShippingTaxableBaseCents\" + \"ShippingVatCents\" = \"ShippingCents\")");
+
+                            t.HasCheckConstraint("CK_Orders_StatusTimes", "(\"Status\" = 'PendingPayment' AND \"PaidAt\" IS NULL AND \"CancelledAt\" IS NULL AND \"ExpiredAt\" IS NULL)\r\nOR (\"Status\" = 'Paid' AND \"PaidAt\" IS NOT NULL AND \"CancelledAt\" IS NULL AND \"ExpiredAt\" IS NULL)\r\nOR (\"Status\" = 'Cancelled' AND \"CancelledAt\" IS NOT NULL AND \"PaidAt\" IS NULL AND \"ExpiredAt\" IS NULL)\r\nOR (\"Status\" = 'Expired' AND \"ExpiredAt\" IS NOT NULL AND \"PaidAt\" IS NULL AND \"CancelledAt\" IS NULL)");
+                        });
+                });
+
+            modelBuilder.Entity("DominioDeLaSierra.Domain.Entities.OrderItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<long>("LineTotalCents")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Reference")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<long>("TaxableBaseCents")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("UnitPriceCents")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("VatCents")
+                        .HasColumnType("bigint");
+
+                    b.Property<decimal>("VatRate")
+                        .HasColumnType("numeric(5,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductId");
+
+                    b.HasIndex("OrderId", "ProductId")
+                        .IsUnique();
+
+                    b.ToTable("OrderItems", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_OrderItems_Amounts", "\"Quantity\" > 0\r\nAND \"Quantity\" <= 1000000\r\nAND \"UnitPriceCents\" >= 0\r\nAND \"LineTotalCents\" >= 0\r\nAND \"TaxableBaseCents\" >= 0\r\nAND \"VatCents\" >= 0\r\nAND \"LineTotalCents\" = \"UnitPriceCents\" * \"Quantity\"\r\nAND \"TaxableBaseCents\" + \"VatCents\" = \"LineTotalCents\"\r\nAND \"VatRate\" >= 0\r\nAND \"VatRate\" <= 999.99");
+                        });
+                });
+
+            modelBuilder.Entity("DominioDeLaSierra.Domain.Entities.OrderItemComponent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ComponentProductId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid>("OrderItemId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("QuantityPerPack")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Reference")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ComponentProductId");
+
+                    b.HasIndex("OrderItemId", "ComponentProductId")
+                        .IsUnique();
+
+                    b.ToTable("OrderItemComponents", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_OrderItemComponents_QuantityPerPack", "\"QuantityPerPack\" > 0 AND \"QuantityPerPack\" <= 1000000");
+                        });
+                });
+
+            modelBuilder.Entity("DominioDeLaSierra.Domain.Entities.Payment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<long>("AmountCents")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset?>("CancelledAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("CheckoutExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CheckoutUrl")
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)");
+
+                    b.Property<DateTimeOffset?>("FailedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("RefundedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("StripeCheckoutSessionId")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<string>("StripePaymentIntentId")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<DateTimeOffset?>("SucceededAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrderId")
+                        .HasDatabaseName("IX_Payments_OrderId");
+
+                    b.HasIndex("StripeCheckoutSessionId")
+                        .IsUnique()
+                        .HasFilter("\"StripeCheckoutSessionId\" IS NOT NULL");
+
+                    b.HasIndex("StripePaymentIntentId")
+                        .IsUnique()
+                        .HasFilter("\"StripePaymentIntentId\" IS NOT NULL");
+
+                    b.HasIndex(new[] { "OrderId" }, "IX_Payments_OnePending")
+                        .IsUnique()
+                        .HasFilter("\"Status\" = 'Pending'");
+
+                    b.ToTable("Payments", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_Payments_Amount", "\"AmountCents\" >= 0");
+
+                            t.HasCheckConstraint("CK_Payments_CheckoutSession", "(\"CheckoutUrl\" IS NULL AND \"CheckoutExpiresAt\" IS NULL)\r\nOR (\"StripeCheckoutSessionId\" IS NOT NULL AND \"CheckoutUrl\" IS NOT NULL AND \"CheckoutExpiresAt\" IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_Payments_Currency", "\"Currency\" = 'EUR'");
+
+                            t.HasCheckConstraint("CK_Payments_StatusTimes", "(\"Status\" = 'Pending' AND \"SucceededAt\" IS NULL AND \"FailedAt\" IS NULL AND \"CancelledAt\" IS NULL AND \"RefundedAt\" IS NULL)\r\nOR (\"Status\" = 'Succeeded' AND \"SucceededAt\" IS NOT NULL AND \"FailedAt\" IS NULL AND \"CancelledAt\" IS NULL AND \"RefundedAt\" IS NULL)\r\nOR (\"Status\" = 'Failed' AND \"FailedAt\" IS NOT NULL AND \"SucceededAt\" IS NULL AND \"CancelledAt\" IS NULL AND \"RefundedAt\" IS NULL)\r\nOR (\"Status\" = 'Cancelled' AND \"CancelledAt\" IS NOT NULL AND \"SucceededAt\" IS NULL AND \"FailedAt\" IS NULL AND \"RefundedAt\" IS NULL)\r\nOR (\"Status\" = 'Refunded' AND \"SucceededAt\" IS NOT NULL AND \"RefundedAt\" IS NOT NULL AND \"FailedAt\" IS NULL AND \"CancelledAt\" IS NULL)");
+                        });
+                });
+
+            modelBuilder.Entity("DominioDeLaSierra.Domain.Entities.PaymentEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AttentionReason")
+                        .HasMaxLength(240)
+                        .HasColumnType("character varying(240)");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<string>("ExternalEventId")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<Guid>("PaymentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("ProcessedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("ReceivedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExternalEventId")
+                        .IsUnique();
+
+                    b.HasIndex("PaymentId");
+
+                    b.ToTable("PaymentEvents", (string)null);
+                });
+
             modelBuilder.Entity("DominioDeLaSierra.Domain.Entities.Product", b =>
                 {
                     b.Property<Guid>("Id")
@@ -259,6 +689,46 @@ namespace DominioDeLaSierra.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("DominioDeLaSierra.Domain.Entities.StockReservation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("ConfirmationStartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("ConfirmedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("ReleasedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("ReservedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrderId")
+                        .IsUnique();
+
+                    b.HasIndex("Status")
+                        .HasFilter("\"Status\" = 'Reserved'");
+
+                    b.ToTable("StockReservations", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_StockReservations_StatusTimes", "(\"Status\" = 'Reserved' AND \"ConfirmationStartedAt\" IS NULL AND \"ConfirmedAt\" IS NULL AND \"ReleasedAt\" IS NULL)\r\nOR (\"Status\" = 'Confirming' AND \"ConfirmationStartedAt\" IS NOT NULL AND \"ConfirmedAt\" IS NULL AND \"ReleasedAt\" IS NULL)\r\nOR (\"Status\" = 'Confirmed' AND \"ConfirmationStartedAt\" IS NOT NULL AND \"ConfirmedAt\" IS NOT NULL AND \"ReleasedAt\" IS NULL)\r\nOR (\"Status\" = 'Released' AND \"ReleasedAt\" IS NOT NULL AND \"ConfirmedAt\" IS NULL AND \"ConfirmationStartedAt\" IS NULL)");
+                        });
+                });
+
             modelBuilder.Entity("DominioDeLaSierra.Domain.Entities.Warehouse", b =>
                 {
                     b.Property<Guid>("Id")
@@ -338,6 +808,77 @@ namespace DominioDeLaSierra.Infrastructure.Persistence.Migrations
                     b.Navigation("ParentCategory");
                 });
 
+            modelBuilder.Entity("DominioDeLaSierra.Domain.Entities.FulfillmentTransition", b =>
+                {
+                    b.HasOne("DominioDeLaSierra.Domain.Entities.Order", "Order")
+                        .WithMany("FulfillmentTransitions")
+                        .HasForeignKey("OrderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Order");
+                });
+
+            modelBuilder.Entity("DominioDeLaSierra.Domain.Entities.OrderItem", b =>
+                {
+                    b.HasOne("DominioDeLaSierra.Domain.Entities.Order", "Order")
+                        .WithMany("Items")
+                        .HasForeignKey("OrderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("DominioDeLaSierra.Domain.Entities.Product", "Product")
+                        .WithMany()
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Order");
+
+                    b.Navigation("Product");
+                });
+
+            modelBuilder.Entity("DominioDeLaSierra.Domain.Entities.OrderItemComponent", b =>
+                {
+                    b.HasOne("DominioDeLaSierra.Domain.Entities.Product", "ComponentProduct")
+                        .WithMany()
+                        .HasForeignKey("ComponentProductId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("DominioDeLaSierra.Domain.Entities.OrderItem", "OrderItem")
+                        .WithMany("Components")
+                        .HasForeignKey("OrderItemId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ComponentProduct");
+
+                    b.Navigation("OrderItem");
+                });
+
+            modelBuilder.Entity("DominioDeLaSierra.Domain.Entities.Payment", b =>
+                {
+                    b.HasOne("DominioDeLaSierra.Domain.Entities.Order", "Order")
+                        .WithMany("Payments")
+                        .HasForeignKey("OrderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Order");
+                });
+
+            modelBuilder.Entity("DominioDeLaSierra.Domain.Entities.PaymentEvent", b =>
+                {
+                    b.HasOne("DominioDeLaSierra.Domain.Entities.Payment", "Payment")
+                        .WithMany("Events")
+                        .HasForeignKey("PaymentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Payment");
+                });
+
             modelBuilder.Entity("DominioDeLaSierra.Domain.Entities.Product", b =>
                 {
                     b.HasOne("DominioDeLaSierra.Domain.Entities.Category", "Category")
@@ -398,6 +939,17 @@ namespace DominioDeLaSierra.Infrastructure.Persistence.Migrations
                     b.Navigation("Stock");
                 });
 
+            modelBuilder.Entity("DominioDeLaSierra.Domain.Entities.StockReservation", b =>
+                {
+                    b.HasOne("DominioDeLaSierra.Domain.Entities.Order", "Order")
+                        .WithMany()
+                        .HasForeignKey("OrderId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Order");
+                });
+
             modelBuilder.Entity("DominioDeLaSierra.Domain.Entities.Wine", b =>
                 {
                     b.HasOne("DominioDeLaSierra.Domain.Entities.Product", "Product")
@@ -414,6 +966,25 @@ namespace DominioDeLaSierra.Infrastructure.Persistence.Migrations
                     b.Navigation("Children");
 
                     b.Navigation("Products");
+                });
+
+            modelBuilder.Entity("DominioDeLaSierra.Domain.Entities.Order", b =>
+                {
+                    b.Navigation("FulfillmentTransitions");
+
+                    b.Navigation("Items");
+
+                    b.Navigation("Payments");
+                });
+
+            modelBuilder.Entity("DominioDeLaSierra.Domain.Entities.OrderItem", b =>
+                {
+                    b.Navigation("Components");
+                });
+
+            modelBuilder.Entity("DominioDeLaSierra.Domain.Entities.Payment", b =>
+                {
+                    b.Navigation("Events");
                 });
 
             modelBuilder.Entity("DominioDeLaSierra.Domain.Entities.Product", b =>

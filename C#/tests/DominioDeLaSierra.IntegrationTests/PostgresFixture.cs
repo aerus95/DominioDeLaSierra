@@ -17,6 +17,7 @@ public sealed class PostgresFixture : IAsyncLifetime
         Factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseSetting("Media:RootPath", mediaRoot);
+            builder.UseSetting("Stripe:WebhookSecret", StripeWebhookSignatures.Secret);
             builder.UseEnvironment("Testing");
         });
     }

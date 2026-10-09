@@ -9,7 +9,7 @@
     "start": "ng serve",
     "preview": "ng serve --configuration preview --host 127.0.0.1 --port 4301",
     "build": "ng build",
-    "test": "node --experimental-strip-types --test src/app/core/wine-display.spec.ts",
+    "test": "node --experimental-strip-types --test src/app/core/wine-display.spec.ts src/app/core/checkout.spec.ts",
     "build:hostinger": "ng build --configuration production,preview --optimization --source-map=false --output-hashing=all",
     "watch": "ng build --watch --configuration development"
   },

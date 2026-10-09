@@ -13,6 +13,13 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<Warehouse> Warehouses => Set<Warehouse>();
     public DbSet<Stock> Stocks => Set<Stock>();
     public DbSet<StockMovement> StockMovements => Set<StockMovement>();
+    public DbSet<Order> Orders => Set<Order>();
+    public DbSet<OrderItem> OrderItems => Set<OrderItem>();
+    public DbSet<OrderItemComponent> OrderItemComponents => Set<OrderItemComponent>();
+    public DbSet<Payment> Payments => Set<Payment>();
+    public DbSet<PaymentEvent> PaymentEvents => Set<PaymentEvent>();
+    public DbSet<StockReservation> StockReservations => Set<StockReservation>();
+    public DbSet<FulfillmentTransition> FulfillmentTransitions => Set<FulfillmentTransition>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

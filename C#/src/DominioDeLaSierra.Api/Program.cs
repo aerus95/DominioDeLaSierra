@@ -1,7 +1,11 @@
+using System.Threading.RateLimiting;
+using DominioDeLaSierra.Api.Checkout;
 using DominioDeLaSierra.Api.Errors;
 using DominioDeLaSierra.Api.Security;
+using DominioDeLaSierra.Application.Checkout;
 using DominioDeLaSierra.Domain;
 using DominioDeLaSierra.Infrastructure;
+using Microsoft.AspNetCore.RateLimiting;
 using DominioDeLaSierra.Infrastructure.Media;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -86,6 +90,8 @@ builder.Services.AddRazorPages(options =>
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.Configure<ReservationSweepOptions>(builder.Configuration.GetSection(ReservationSweepOptions.SectionName));
+builder.Services.AddHostedService<ReservationSweepWorker>();
 
 builder.Services.AddCors(options =>
 {
@@ -93,6 +99,37 @@ builder.Services.AddCors(options =>
         policy.WithOrigins("http://localhost:4200", "http://127.0.0.1:4200")
             .AllowAnyHeader()
             .AllowAnyMethod());
+});
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = async (context, cancellationToken) =>
+    {
+        context.HttpContext.Response.ContentType = "application/json; charset=utf-8";
+        await context.HttpContext.Response.WriteAsJsonAsync(
+            new { error = "Demasiadas solicitudes. Espera un momento y vuelve a intentarlo." },
+            cancellationToken);
+    };
+    var testing = builder.Environment.IsEnvironment("Testing");
+    options.AddPolicy("checkout", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            httpContext.Connection.RemoteIpAddress?.ToString() ?? "checkout",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = testing ? 10_000 : 60,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0
+            }));
+    options.AddPolicy("stripe-webhook", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            httpContext.Connection.RemoteIpAddress?.ToString() ?? "stripe-webhook",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = testing ? 10_000 : 120,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0
+            }));
 });
 
 var app = builder.Build();
@@ -161,6 +198,7 @@ app.UseStaticFiles(new StaticFileOptions
 
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 var faviconPath = FindStoreFavicon(app.Environment.ContentRootPath) ?? FindStoreFavicon(AppContext.BaseDirectory);
 if (faviconPath is not null)
 {

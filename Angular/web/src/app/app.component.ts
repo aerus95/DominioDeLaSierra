@@ -4,6 +4,7 @@ import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } fro
 import { filter, Subscription } from 'rxjs';
 import { basketProducts } from './core/product-visual';
 import { CartService } from './core/cart.service';
+import { FREE_SHIPPING_EUROS } from './core/checkout';
 import { environment } from '../environments/environment';
 import { CookieConsentService } from './core/cookie-consent.service';
 import { CookieConsentComponent } from './shared/cookie-consent.component';
@@ -67,8 +68,8 @@ export class AppComponent implements AfterViewInit, OnDestroy {
   readonly showAgeGate = signal(this.readAgeGate());
   readonly isManagementRoute = signal(false);
   readonly visibleCartBottles = computed(() => basketProducts(this.cart.items()));
-  readonly shippingRemaining = computed(() => Math.max(0, 60 - this.cart.subtotal()));
-  readonly shippingProgress = computed(() => Math.min(100, this.cart.subtotal() / 60 * 100));
+  readonly shippingRemaining = computed(() => Math.max(0, FREE_SHIPPING_EUROS - this.cart.subtotal()));
+  readonly shippingProgress = computed(() => Math.min(100, this.cart.subtotal() / FREE_SHIPPING_EUROS * 100));
   private observer?: IntersectionObserver;
   private navigation?: Subscription;
   constructor(public readonly cart: CartService, private readonly router: Router, public readonly consent: CookieConsentService) {
