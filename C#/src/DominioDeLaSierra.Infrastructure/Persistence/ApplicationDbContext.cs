@@ -20,6 +20,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<PaymentEvent> PaymentEvents => Set<PaymentEvent>();
     public DbSet<StockReservation> StockReservations => Set<StockReservation>();
     public DbSet<FulfillmentTransition> FulfillmentTransitions => Set<FulfillmentTransition>();
+    public DbSet<OrderNotification> OrderNotifications => Set<OrderNotification>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

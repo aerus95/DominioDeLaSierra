@@ -1,6 +1,9 @@
 using DominioDeLaSierra.Application.Checkout;
 using DominioDeLaSierra.Domain;
 using DominioDeLaSierra.Domain.Entities;
+using DominioDeLaSierra.Infrastructure.Checkout;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Primitives;
 
 namespace DominioDeLaSierra.UnitTests;
 
@@ -139,5 +142,58 @@ public class StripeCheckoutTests
                 "https://checkout.stripe.com/c/pay/cs_live_secret",
                 Now.AddMinutes(30))).Message);
         Assert.Null(payment.StripeCheckoutSessionId);
+    }
+
+    [Fact]
+    public void Stores_a_test_session_whose_identifier_contains_the_letters_live()
+    {
+        var order = Order.CreatePending(
+            Guid.NewGuid(),
+            "DS-STRIPE-3",
+            "stripe-session",
+            "Ana Rivas",
+            "ana@example.com",
+            "+34600111222",
+            "Calle Mayor 1",
+            "37001",
+            "Salamanca",
+            "Salamanca",
+            null,
+            [new OrderLine(Guid.NewGuid(), "Dominium", "DOM-1", ProductKind.Wine, 1, 1_890, 21m, null)],
+            Now);
+        var payment = order.AddPayment(Guid.NewGuid(), Now);
+
+        order.AssignHostedCheckout(
+            payment.Id,
+            "cs_test_a11liveYYufWQzNY63zp",
+            "https://checkout.stripe.com/c/pay/cs_test_a11liveYYufWQzNY63zp",
+            Now.AddMinutes(30));
+
+        Assert.Equal("cs_test_a11liveYYufWQzNY63zp", payment.StripeCheckoutSessionId);
+    }
+
+    [Fact]
+    public void Rejects_a_webhook_without_a_valid_signature()
+    {
+        var parser = new StripeWebhookParser(new WebhookSecretConfiguration("whsec_test_local"));
+
+        Assert.Throws<StripeWebhookSignatureException>(() => parser.Parse("{}", null));
+        Assert.Throws<StripeWebhookSignatureException>(() => parser.Parse("{}", " "));
+        Assert.Throws<StripeWebhookSignatureException>(() => parser.Parse("{}", "t=1,v1=not-a-signature"));
+    }
+
+    private sealed class WebhookSecretConfiguration(string secret) : IConfiguration
+    {
+        public string? this[string key]
+        {
+            get => key is "Stripe:WebhookSecret" or "STRIPE_WEBHOOK_SECRET" ? secret : null;
+            set => throw new NotSupportedException();
+        }
+
+        public IEnumerable<IConfigurationSection> GetChildren() => [];
+
+        public IChangeToken GetReloadToken() => throw new NotSupportedException();
+
+        public IConfigurationSection GetSection(string key) => throw new NotSupportedException();
     }
 }

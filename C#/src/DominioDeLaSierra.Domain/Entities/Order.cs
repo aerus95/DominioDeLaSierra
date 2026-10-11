@@ -54,10 +54,13 @@ public sealed class Order
     public IReadOnlyList<OrderItem> Items => items;
     public IReadOnlyList<Payment> Payments => payments;
     public IReadOnlyList<FulfillmentTransition> FulfillmentTransitions => fulfillmentTransitions;
+    public IReadOnlyList<OrderNotification> Notifications => notifications;
 
     private readonly List<OrderItem> items = [];
     private readonly List<Payment> payments = [];
     private readonly List<FulfillmentTransition> fulfillmentTransitions = [];
+    private readonly List<OrderNotification> notifications = [];
+    private bool paidConfirmationPending;
 
     private Order()
     {
@@ -234,6 +237,28 @@ public sealed class Order
         RequirePayment(paymentId).MarkSucceeded(at);
         Status = OrderStatus.Paid;
         PaidAt = at;
+        paidConfirmationPending = true;
+    }
+
+    public void RecordPaidConfirmation(DateTimeOffset at)
+    {
+        if (!paidConfirmationPending)
+        {
+            throw new InvalidOperationException("La confirmación de pago no corresponde a una transición nueva.");
+        }
+
+        if (at != PaidAt)
+        {
+            throw new ArgumentException("La fecha del aviso no coincide con el pago.");
+        }
+
+        if (notifications.Any(notification => notification.Kind == OrderNotificationKind.PaidConfirmation))
+        {
+            throw new InvalidOperationException("El pedido ya tiene una confirmación de pago.");
+        }
+
+        notifications.Add(OrderNotification.CreatePending(Guid.NewGuid(), this, OrderNotificationKind.PaidConfirmation, at));
+        paidConfirmationPending = false;
     }
 
     public void RecordPaymentFailure(Guid paymentId, DateTimeOffset at)

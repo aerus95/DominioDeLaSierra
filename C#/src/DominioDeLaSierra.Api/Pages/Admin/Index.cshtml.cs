@@ -840,5 +840,5 @@ public sealed class IndexModel(
     public static string StockLabel(AdminProductDto product) =>
         product.Kind == ProductKind.Pack
             ? "Derivado"
-            : (product.StockQuantity ?? 0).ToString();
+            : product.StockQuantity?.ToString() ?? "Sin inventario";
 }

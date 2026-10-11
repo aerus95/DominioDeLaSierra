@@ -103,7 +103,9 @@ public static class StripeCheckoutFacts
 
     public static StripeSessionInspection Classify(ObservedCheckoutSession session, Guid orderId)
     {
-        if (session.LiveMode || ContainsLive(session.SessionId) || ContainsLive(session.PaymentIntentId))
+        if (session.LiveMode
+            || StripeCheckoutGuard.IsLiveObjectId(session.SessionId)
+            || StripeCheckoutGuard.IsLiveObjectId(session.PaymentIntentId))
         {
             return Copy(session, StripeCheckoutFact.Contradiction, StripeCheckoutGuard.TestKeyMessage);
         }
@@ -152,11 +154,6 @@ public static class StripeCheckoutFacts
     private static bool IsPendingIntent(string? status)
     {
         return status is not null && PendingIntents.Contains(status);
-    }
-
-    private static bool ContainsLive(string? value)
-    {
-        return value is not null && value.Contains("live", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool RefersToAnotherOrder(string? value, Guid orderId)

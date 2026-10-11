@@ -345,7 +345,7 @@ public sealed class ReservationSweepService(
         }
 
         if (!inspection.SessionId.StartsWith("cs_test_", StringComparison.Ordinal)
-            || inspection.SessionId.Contains("live", StringComparison.OrdinalIgnoreCase))
+            || StripeCheckoutGuard.IsLiveObjectId(inspection.SessionId))
         {
             return StripeCheckoutGuard.TestKeyMessage;
         }

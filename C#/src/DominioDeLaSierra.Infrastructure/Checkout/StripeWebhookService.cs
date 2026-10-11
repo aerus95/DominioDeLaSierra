@@ -37,7 +37,9 @@ public sealed class StripeWebhookService(
         CancellationToken cancellationToken = default)
     {
         var notice = parser.Parse(payload ?? string.Empty, signatureHeader);
-        if (notice.LiveMode || IsLiveIdentifier(notice.SessionId) || IsLiveIdentifier(notice.PaymentIntentId))
+        if (notice.LiveMode
+            || StripeCheckoutGuard.IsLiveObjectId(notice.SessionId)
+            || StripeCheckoutGuard.IsLiveObjectId(notice.PaymentIntentId))
         {
             throw new StripeCheckoutException(StripeCheckoutGuard.TestKeyMessage);
         }
@@ -187,11 +189,6 @@ public sealed class StripeWebhookService(
         command.Parameters.Add(parameter);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         return await reader.ReadAsync(cancellationToken);
-    }
-
-    private static bool IsLiveIdentifier(string? value)
-    {
-        return value is not null && value.Contains("live", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsUniqueEvent(DbUpdateException exception)

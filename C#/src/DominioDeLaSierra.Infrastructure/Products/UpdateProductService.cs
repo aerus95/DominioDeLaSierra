@@ -217,11 +217,6 @@ public sealed class UpdateProductService(ApplicationDbContext dbContext) : IUpda
             throw new ArgumentException("El stock indicado no es válido.");
         }
 
-        if (!CatalogNumbers.TryParseStockQuantity(command.LoadedStock, out var loadedStock, out var loadedError))
-        {
-            throw new ArgumentException(loadedError ?? "El stock indicado no es válido.");
-        }
-
         if (!CatalogNumbers.TryParseStockQuantity(command.Stock, out var desired, out var stockError))
         {
             throw new ArgumentException(stockError ?? "El stock indicado no es válido.");
@@ -240,7 +235,19 @@ public sealed class UpdateProductService(ApplicationDbContext dbContext) : IUpda
             cancellationToken);
         if (!locked)
         {
-            throw new InvalidOperationException(CatalogRevision.MissingStockMessage);
+            if (!string.IsNullOrWhiteSpace(command.LoadedStock))
+            {
+                throw new InvalidOperationException(CatalogRevision.StockChangedMessage);
+            }
+
+            InventoryStock.AddOpeningBalance(
+                dbContext,
+                warehouseId.Value,
+                product.Id,
+                product.Kind,
+                desired,
+                now);
+            return;
         }
 
         var stock = await dbContext.Stocks.FirstOrDefaultAsync(
@@ -249,6 +256,16 @@ public sealed class UpdateProductService(ApplicationDbContext dbContext) : IUpda
         if (stock is null)
         {
             throw new InvalidOperationException(CatalogRevision.MissingStockMessage);
+        }
+
+        if (string.IsNullOrWhiteSpace(command.LoadedStock))
+        {
+            throw new InvalidOperationException(CatalogRevision.StockChangedMessage);
+        }
+
+        if (!CatalogNumbers.TryParseStockQuantity(command.LoadedStock, out var loadedStock, out var loadedError))
+        {
+            throw new ArgumentException(loadedError ?? "El stock indicado no es válido.");
         }
 
         if (stock.Quantity != loadedStock)

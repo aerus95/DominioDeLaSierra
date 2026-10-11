@@ -5,7 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { HttpErrorResponse } from '@angular/common/http';
-import { CheckoutCustomerInput, CheckoutQuote, FREE_SHIPPING_EUROS, GuestOrder, HOLD_RELEASED_MESSAGE, checkoutErrorMessage, checkoutSignature, eurosFromCents, forgetIdempotencyKey, readCheckoutAccess, rememberCheckoutAccess, resolveIdempotencyKey, stripeCheckoutUrl } from '../../core/checkout';
+import { CheckoutCustomerInput, CheckoutQuote, FREE_SHIPPING_EUROS, GuestOrder, HOLD_RELEASED_MESSAGE, checkoutErrorMessage, checkoutSignature, eurosFromCents, forgetIdempotencyKey, readCheckoutAccess, rememberCheckoutAccess, rememberCurrentCheckout, resolveIdempotencyKey, stripeCheckoutUrl } from '../../core/checkout';
 import { CartService } from '../../core/cart.service';
 import { CatalogService } from '../../core/catalog.service';
 import { CheckoutService } from '../../core/checkout.service';
@@ -148,6 +148,7 @@ export class CartComponent {
     this.checkout.pay(this.customerInput(), lines, key).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (payment) => {
         rememberCheckoutAccess(payment.orderId, payment.checkoutAccessToken, storage);
+        rememberCurrentCheckout(payment.orderId, payment.checkoutAccessToken, storage);
         if (payment.status === 'Paid') {
           this.paying.set(false);
           this.checkoutError.set('El navegador no puede dar el pago por confirmado.');
@@ -174,6 +175,7 @@ export class CartComponent {
     const order = this.placed();
     if (!order || this.paying()) return;
     const token = readCheckoutAccess(order.orderId, this.checkoutStorage());
+    rememberCurrentCheckout(order.orderId, token, this.checkoutStorage());
     if (!token) {
       this.checkoutError.set('No encontramos el acceso a este pago. Vuelve a confirmar el pedido.');
       return;

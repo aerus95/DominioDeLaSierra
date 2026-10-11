@@ -27,9 +27,7 @@ public static class PaidSessionRules
             return StripeWebhookRules.CurrencyMessage;
         }
 
-        if (string.IsNullOrWhiteSpace(paymentIntentId)
-            || !paymentIntentId.StartsWith("pi_test_", StringComparison.Ordinal)
-            || paymentIntentId.Contains("live", StringComparison.OrdinalIgnoreCase))
+        if (!StripeCheckoutGuard.IsTestPaymentIntent(paymentIntentId))
         {
             return StripeWebhookRules.IntentMessage;
         }

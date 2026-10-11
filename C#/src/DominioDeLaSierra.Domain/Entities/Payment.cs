@@ -68,7 +68,8 @@ public sealed class Payment
         }
 
         var session = OrderText.RequireToken(sessionId, StripeIdMaxLength, "La sesión de pago");
-        if (!session.StartsWith("cs_test_", StringComparison.Ordinal) || session.Contains("live", StringComparison.OrdinalIgnoreCase))
+        if (!session.StartsWith("cs_test_", StringComparison.Ordinal)
+            || session.Contains("cs_live_", StringComparison.OrdinalIgnoreCase))
         {
             throw new ArgumentException("La sesión de pago no es de pruebas.");
         }

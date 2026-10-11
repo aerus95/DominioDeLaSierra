@@ -5,6 +5,7 @@ using DominioDeLaSierra.Api.Security;
 using DominioDeLaSierra.Application.Checkout;
 using DominioDeLaSierra.Domain;
 using DominioDeLaSierra.Infrastructure;
+using DominioDeLaSierra.Infrastructure.Persistence;
 using Microsoft.AspNetCore.RateLimiting;
 using DominioDeLaSierra.Infrastructure.Media;
 using Microsoft.AspNetCore.Authentication;
@@ -89,9 +90,17 @@ builder.Services.AddRazorPages(options =>
 });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+DatabaseGuard.EnsureProcess(
+    builder.Environment.EnvironmentName,
+    PostgresConnection.Build(builder.Configuration));
+OrderNotificationDeliveryGuard.Ensure(
+    builder.Environment.EnvironmentName,
+    builder.Configuration.GetSection(OrderNotificationOptions.SectionName).Get<OrderNotificationOptions>()
+        ?? new OrderNotificationOptions());
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.Configure<ReservationSweepOptions>(builder.Configuration.GetSection(ReservationSweepOptions.SectionName));
 builder.Services.AddHostedService<ReservationSweepWorker>();
+builder.Services.AddHostedService<OrderNotificationWorker>();
 
 builder.Services.AddCors(options =>
 {
@@ -135,21 +144,10 @@ builder.Services.AddRateLimiter(options =>
 var app = builder.Build();
 
 var testingMediaRoot = default(string);
-if (app.Environment.IsEnvironment("Testing"))
+if (app.Environment.IsEnvironment("Testing")
+    && string.IsNullOrWhiteSpace(builder.Configuration["Media:RootPath"]))
 {
-    var databaseName = builder.Configuration["Database:Name"] ?? string.Empty;
-    var databaseHost = builder.Configuration["Database:Host"] ?? "localhost";
-    if (!databaseName.EndsWith("_tests", StringComparison.OrdinalIgnoreCase)
-        || databaseHost is not ("localhost" or "127.0.0.1"))
-    {
-        throw new InvalidOperationException(
-            "El entorno Testing solo puede usar una base local cuyo nombre termina en _tests.");
-    }
-
-    if (string.IsNullOrWhiteSpace(builder.Configuration["Media:RootPath"]))
-    {
-        testingMediaRoot = Path.Combine(Path.GetTempPath(), "dominio-sierra-tests", "media");
-    }
+    testingMediaRoot = Path.Combine(Path.GetTempPath(), "dominio-sierra-tests", "media");
 }
 
 app.UseForwardedHeaders();

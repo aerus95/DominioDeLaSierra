@@ -1,0 +1,248 @@
+using System.Globalization;
+using System.Net;
+using System.Text;
+
+namespace DominioDeLaSierra.Application.Checkout;
+
+public sealed record PaidConfirmationLine(
+    string Name,
+    string Reference,
+    int Quantity,
+    long UnitPriceCents,
+    long LineTotalCents);
+
+public sealed record PaidConfirmationContent(
+    string Number,
+    string CustomerName,
+    string Email,
+    IReadOnlyList<PaidConfirmationLine> Lines,
+    long ShippingCents,
+    long TotalCents,
+    string AddressLine,
+    string PostalCode,
+    string City,
+    string Province,
+    string CountryLabel,
+    string? DeliveryNotes);
+
+public sealed record OrderMail(
+    string Recipient,
+    string Subject,
+    string TextBody,
+    string HtmlBody,
+    string MessageId);
+
+public static class PaidConfirmationMail
+{
+    public const string ShippedLaterMessage = "Cuando el pedido salga, te escribiremos con el transportista y el seguimiento.";
+    private static readonly CultureInfo Spanish = CultureInfo.GetCultureInfo("es-ES");
+
+    public static OrderMail Compose(PaidConfirmationContent content, string messageId)
+    {
+        ArgumentNullException.ThrowIfNull(content);
+        var number = Line(content.Number, "El número de pedido");
+        var name = Line(content.CustomerName, "El nombre");
+        var email = Line(content.Email, "El correo electrónico");
+        if (email.Count(character => character == '@') != 1 || email.Contains(' '))
+        {
+            throw new ArgumentException("El correo electrónico no es válido.");
+        }
+
+        var message = Line(messageId, "El identificador del mensaje");
+        if (content.Lines is null || content.Lines.Count == 0)
+        {
+            throw new ArgumentException("El aviso de confirmación no tiene productos.");
+        }
+
+        var address = Line(content.AddressLine, "La dirección");
+        var postalCode = Line(content.PostalCode, "El código postal");
+        var city = Line(content.City, "La localidad");
+        var province = Line(content.Province, "La provincia");
+        var country = Line(content.CountryLabel, "El país");
+        var notes = string.IsNullOrWhiteSpace(content.DeliveryNotes) ? null : Line(content.DeliveryNotes, "Las indicaciones");
+        var shipping = Euros(content.ShippingCents);
+        var total = Euros(content.TotalCents);
+        var lines = content.Lines.Select(line => new PreparedLine(
+            Line(line.Name, "El producto"),
+            Line(line.Reference, "La referencia"),
+            line.Quantity,
+            Euros(line.UnitPriceCents),
+            Euros(line.LineTotalCents))).ToArray();
+        if (lines.Any(line => line.Quantity <= 0))
+        {
+            throw new ArgumentException("La cantidad del aviso no es válida.");
+        }
+
+        var subject = $"Confirmación de tu pedido {number}";
+        return new OrderMail(
+            email,
+            subject,
+            Text(name, number, lines, shipping, total, address, postalCode, city, province, country, notes),
+            Html(subject, name, number, lines, shipping, total, address, postalCode, city, province, country, notes),
+            message);
+    }
+
+    public static string Euros(long cents)
+    {
+        if (cents < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(cents), "El importe del aviso no es válido.");
+        }
+
+        return string.Create(Spanish, $"{cents / 100m:N2} €");
+    }
+
+    private static string Text(
+        string name,
+        string number,
+        IReadOnlyList<PreparedLine> lines,
+        string shipping,
+        string total,
+        string address,
+        string postalCode,
+        string city,
+        string province,
+        string country,
+        string? notes)
+    {
+        var body = new StringBuilder();
+        body.AppendLine("Dominio de la Sierra");
+        body.AppendLine();
+        body.Append("Hola ").Append(name).AppendLine(",");
+        body.AppendLine();
+        body.Append("Hemos registrado el pago de tu pedido ").Append(number).AppendLine(".");
+        body.AppendLine();
+        foreach (var line in lines)
+        {
+            body.Append(line.Quantity).Append(" × ").Append(line.Name)
+                .Append(" (").Append(line.Reference).Append(") · ")
+                .Append(line.UnitPrice).Append(" · ")
+                .AppendLine(line.LineTotal);
+        }
+
+        body.AppendLine();
+        body.Append("Gastos de envío: ").AppendLine(shipping);
+        body.Append("Total pagado: ").AppendLine(total);
+        body.AppendLine();
+        body.AppendLine("Entrega:");
+        body.AppendLine(address);
+        body.Append(postalCode).Append(' ').AppendLine(city);
+        body.AppendLine(province);
+        body.AppendLine(country);
+        if (notes is not null)
+        {
+            body.AppendLine(notes);
+        }
+
+        body.AppendLine();
+        body.AppendLine(ShippedLaterMessage);
+        return body.ToString();
+    }
+
+    private static string Html(
+        string subject,
+        string name,
+        string number,
+        IReadOnlyList<PreparedLine> lines,
+        string shipping,
+        string total,
+        string address,
+        string postalCode,
+        string city,
+        string province,
+        string country,
+        string? notes)
+    {
+        var rows = new StringBuilder();
+        foreach (var line in lines)
+        {
+            rows.Append("<tr><td style=\"padding:12px 0;border-bottom:1px solid #d9d3cb;color:#292628;\">")
+                .Append(Encode(line.Name))
+                .Append("<div style=\"color:#625d5b;font-size:13px;\">").Append(Encode(line.Reference)).Append("</div></td>")
+                .Append("<td style=\"padding:12px 8px;border-bottom:1px solid #d9d3cb;text-align:right;color:#292628;\">")
+                .Append(line.Quantity).Append("</td>")
+                .Append("<td style=\"padding:12px 0;border-bottom:1px solid #d9d3cb;text-align:right;color:#292628;\">")
+                .Append(Encode(line.LineTotal)).Append("</td></tr>");
+        }
+
+        var notesHtml = notes is null
+            ? string.Empty
+            : "<p style=\"margin:8px 0 0;color:#625d5b;\">" + Encode(notes) + "</p>";
+        return $"""
+            <!DOCTYPE html>
+            <html lang="es">
+            <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>{Encode(subject)}</title>
+            </head>
+            <body style="margin:0;padding:0;background:#eeeae3;">
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#eeeae3;margin:0;padding:24px 12px;">
+            <tr><td align="center">
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:600px;background:#faf9f6;border:1px solid #d9d3cb;">
+            <tr><td style="background:#382029;padding:28px 32px;">
+            <p style="margin:0 0 8px;font-family:Georgia,serif;font-size:12px;letter-spacing:.16em;color:#b69a71;">BODEGA</p>
+            <p style="margin:0;font-family:Georgia,serif;font-size:28px;line-height:1.2;color:#faf9f6;">Dominio de la Sierra</p>
+            </td></tr>
+            <tr><td style="padding:32px;font-family:Georgia,serif;color:#292628;">
+            <p style="margin:0 0 8px;font-size:13px;letter-spacing:.14em;color:#783b4b;">PEDIDO CONFIRMADO</p>
+            <h1 style="margin:0 0 16px;font-size:28px;line-height:1.25;font-weight:normal;">Hola {Encode(name)}</h1>
+            <p style="margin:0 0 24px;font-size:16px;line-height:1.7;">Hemos registrado el pago de tu pedido {Encode(number)}.</p>
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="font-size:15px;">
+            <tr><td style="padding-bottom:8px;color:#625d5b;font-size:12px;letter-spacing:.08em;">PRODUCTO</td><td style="padding-bottom:8px;color:#625d5b;font-size:12px;letter-spacing:.08em;text-align:right;">CANT.</td><td style="padding-bottom:8px;color:#625d5b;font-size:12px;letter-spacing:.08em;text-align:right;">IMPORTE</td></tr>
+            {rows}
+            </table>
+            <p style="margin:20px 0 4px;font-size:15px;">Gastos de envío: {Encode(shipping)}</p>
+            <p style="margin:0 0 24px;font-size:18px;">Total pagado: {Encode(total)}</p>
+            <p style="margin:0;font-size:12px;letter-spacing:.12em;color:#783b4b;">ENTREGA</p>
+            <p style="margin:8px 0 0;font-size:16px;line-height:1.6;">{Encode(address)}<br>{Encode(postalCode)} {Encode(city)}<br>{Encode(province)}<br>{Encode(country)}</p>
+            {notesHtml}
+            <p style="margin:28px 0 0;padding-top:20px;border-top:1px solid #d9d3cb;font-size:15px;line-height:1.7;color:#625d5b;">{Encode(ShippedLaterMessage)}</p>
+            </td></tr>
+            </table>
+            </td></tr>
+            </table>
+            </body>
+            </html>
+            """;
+    }
+
+    private static string Line(string? value, string label)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new ArgumentException($"{label} es obligatorio.");
+        }
+
+        var compact = new StringBuilder(value.Length);
+        var pendingSpace = false;
+        foreach (var character in value.Trim())
+        {
+            if (char.IsControl(character) || char.IsWhiteSpace(character))
+            {
+                pendingSpace = compact.Length > 0;
+                continue;
+            }
+
+            if (pendingSpace)
+            {
+                compact.Append(' ');
+                pendingSpace = false;
+            }
+
+            compact.Append(character);
+        }
+
+        var text = compact.ToString().Trim();
+        if (text.Length == 0)
+        {
+            throw new ArgumentException($"{label} es obligatorio.");
+        }
+
+        return text;
+    }
+
+    private static string Encode(string value) => WebUtility.HtmlEncode(value);
+
+    private sealed record PreparedLine(string Name, string Reference, int Quantity, string UnitPrice, string LineTotal);
+}

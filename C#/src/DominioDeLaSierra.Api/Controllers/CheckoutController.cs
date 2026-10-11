@@ -8,7 +8,10 @@ namespace DominioDeLaSierra.Api.Controllers;
 [EnableRateLimiting("checkout")]
 [RequestSizeLimit(16 * 1024)]
 [Route("api/v1/checkout")]
-public sealed class CheckoutController(ICheckout checkout, IOrderPaymentSessions sessions) : ControllerBase
+public sealed class CheckoutController(
+    ICheckout checkout,
+    IOrderPaymentSessions sessions,
+    ICheckoutOutcome outcomes) : ControllerBase
 {
     [HttpPost("quotes")]
     public async Task<ActionResult<CheckoutQuoteDto>> Quote(
@@ -121,6 +124,27 @@ public sealed class CheckoutController(ICheckout checkout, IOrderPaymentSessions
         catch (StripeCheckoutException exception)
         {
             return StatusCode(StatusCodes.Status502BadGateway, new { error = exception.Message });
+        }
+    }
+
+    [HttpPost("outcome")]
+    public async Task<ActionResult<CheckoutOutcomeDto>> Outcome(
+        [FromHeader(Name = "Checkout-Access-Token")] string? checkoutAccessToken,
+        [FromBody] CheckoutOutcomeRequest? request,
+        CancellationToken cancellationToken)
+    {
+        if (request is null)
+        {
+            return BadRequest(new { error = CheckoutLimits.MissingBodyMessage });
+        }
+
+        try
+        {
+            return Ok(await outcomes.ReadAsync(request.OrderId, checkoutAccessToken, cancellationToken));
+        }
+        catch (CheckoutNotFoundException exception)
+        {
+            return NotFound(new { error = exception.Message });
         }
     }
 }

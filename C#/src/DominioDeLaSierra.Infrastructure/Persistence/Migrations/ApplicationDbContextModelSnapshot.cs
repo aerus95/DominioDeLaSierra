@@ -407,6 +407,73 @@ namespace DominioDeLaSierra.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("DominioDeLaSierra.Domain.Entities.OrderNotification", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(240)
+                        .HasColumnType("character varying(240)");
+
+                    b.Property<DateTimeOffset?>("NextAttemptAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("ProcessingUntil")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ProviderMessageId")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<uint>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.Property<DateTimeOffset?>("SentAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NextAttemptAt")
+                        .HasDatabaseName("IX_OrderNotifications_Due")
+                        .HasFilter("\"Status\" IN ('Pending', 'Failed')");
+
+                    b.HasIndex("ProcessingUntil")
+                        .HasDatabaseName("IX_OrderNotifications_Processing")
+                        .HasFilter("\"Status\" = 'Processing'");
+
+                    b.HasIndex("OrderId", "Kind")
+                        .IsUnique();
+
+                    b.ToTable("OrderNotifications", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_OrderNotifications_State", "\"Kind\" IN ('PaidConfirmation')\r\nAND \"Attempts\" >= 0\r\nAND \"Attempts\" <= 8\r\nAND (\r\n    (\"Status\" = 'Pending'\r\n        AND \"Attempts\" = 0\r\n        AND \"NextAttemptAt\" IS NOT NULL\r\n        AND \"SentAt\" IS NULL\r\n        AND \"ProviderMessageId\" IS NULL\r\n        AND \"LastError\" IS NULL\r\n        AND \"ProcessingUntil\" IS NULL)\r\n    OR (\"Status\" = 'Processing'\r\n        AND \"Attempts\" < 8\r\n        AND \"NextAttemptAt\" IS NOT NULL\r\n        AND \"ProcessingUntil\" IS NOT NULL\r\n        AND \"SentAt\" IS NULL\r\n        AND \"ProviderMessageId\" IS NULL)\r\n    OR (\"Status\" = 'Sent'\r\n        AND \"SentAt\" IS NOT NULL\r\n        AND \"ProviderMessageId\" IS NOT NULL\r\n        AND \"ProcessingUntil\" IS NULL\r\n        AND \"LastError\" IS NULL)\r\n    OR (\"Status\" = 'Failed'\r\n        AND \"Attempts\" >= 1\r\n        AND \"Attempts\" < 8\r\n        AND \"NextAttemptAt\" IS NOT NULL\r\n        AND \"LastError\" IS NOT NULL\r\n        AND \"SentAt\" IS NULL\r\n        AND \"ProviderMessageId\" IS NULL\r\n        AND \"ProcessingUntil\" IS NULL)\r\n    OR (\"Status\" = 'Abandoned'\r\n        AND \"Attempts\" = 8\r\n        AND \"NextAttemptAt\" IS NULL\r\n        AND \"LastError\" IS NOT NULL\r\n        AND \"SentAt\" IS NULL\r\n        AND \"ProviderMessageId\" IS NULL\r\n        AND \"ProcessingUntil\" IS NULL)\r\n)");
+                        });
+                });
+
             modelBuilder.Entity("DominioDeLaSierra.Domain.Entities.Payment", b =>
                 {
                     b.Property<Guid>("Id")
@@ -857,6 +924,17 @@ namespace DominioDeLaSierra.Infrastructure.Persistence.Migrations
                     b.Navigation("OrderItem");
                 });
 
+            modelBuilder.Entity("DominioDeLaSierra.Domain.Entities.OrderNotification", b =>
+                {
+                    b.HasOne("DominioDeLaSierra.Domain.Entities.Order", "Order")
+                        .WithMany("Notifications")
+                        .HasForeignKey("OrderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Order");
+                });
+
             modelBuilder.Entity("DominioDeLaSierra.Domain.Entities.Payment", b =>
                 {
                     b.HasOne("DominioDeLaSierra.Domain.Entities.Order", "Order")
@@ -973,6 +1051,8 @@ namespace DominioDeLaSierra.Infrastructure.Persistence.Migrations
                     b.Navigation("FulfillmentTransitions");
 
                     b.Navigation("Items");
+
+                    b.Navigation("Notifications");
 
                     b.Navigation("Payments");
                 });

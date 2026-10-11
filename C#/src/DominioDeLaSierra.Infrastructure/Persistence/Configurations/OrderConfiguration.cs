@@ -249,5 +249,14 @@ public sealed class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.Navigation(order => order.FulfillmentTransitions)
             .HasField("fulfillmentTransitions")
             .UsePropertyAccessMode(PropertyAccessMode.Field);
+
+        builder.HasMany(order => order.Notifications)
+            .WithOne(notification => notification.Order)
+            .HasForeignKey(notification => notification.OrderId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Navigation(order => order.Notifications)
+            .HasField("notifications")
+            .UsePropertyAccessMode(PropertyAccessMode.Field);
     }
 }

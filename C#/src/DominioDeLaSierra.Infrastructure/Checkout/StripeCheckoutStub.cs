@@ -93,6 +93,18 @@ public sealed class StripeCheckoutStub : IStripeCheckoutGateway
         }
     }
 
+    public Task<StoredSessionRead> ReadStoredSessionAsync(
+        string sessionId,
+        CancellationToken cancellationToken = default)
+    {
+        if (InspectFailure is not null || string.IsNullOrWhiteSpace(sessionId))
+        {
+            return Task.FromResult(StoredSessionRead.Unavailable());
+        }
+
+        return Task.FromResult(StoredSessionRead.Missing());
+    }
+
     public async Task<CreatedStripeCheckout> CreateAsync(
         StripeCheckoutDraft draft,
         string idempotencyKey,

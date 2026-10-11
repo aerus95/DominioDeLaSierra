@@ -32,6 +32,47 @@ public static class StripeCheckoutGuard
 
         return key;
     }
+
+    public static bool IsLiveObjectId(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        return value.Contains("cs_live_", StringComparison.OrdinalIgnoreCase)
+            || value.Contains("pi_live_", StringComparison.OrdinalIgnoreCase)
+            || value.Contains("sk_live_", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static bool IsTestPaymentIntent(string? paymentIntentId)
+    {
+        if (string.IsNullOrWhiteSpace(paymentIntentId) || paymentIntentId.Any(char.IsWhiteSpace))
+        {
+            return false;
+        }
+
+        if (IsLiveObjectId(paymentIntentId) || !paymentIntentId.StartsWith("pi_", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var body = paymentIntentId.AsSpan(3);
+        if (body.IsEmpty)
+        {
+            return false;
+        }
+
+        foreach (var character in body)
+        {
+            if (character is not ((>= '0' and <= '9') or (>= 'A' and <= 'Z') or (>= 'a' and <= 'z') or '_'))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
 }
 
 public sealed class StripeCheckoutException : Exception

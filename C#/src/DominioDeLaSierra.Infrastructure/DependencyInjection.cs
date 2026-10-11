@@ -20,6 +20,7 @@ using DominioDeLaSierra.Infrastructure.Inventory;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace DominioDeLaSierra.Infrastructure;
 
@@ -51,9 +52,21 @@ public static class DependencyInjection
         services.AddScoped<IOrderStock, OrderStockService>();
         services.AddScoped<ICheckout, CheckoutService>();
         services.AddScoped<IOrderPaymentSessions, OrderPaymentSessionService>();
+        services.AddScoped<ICheckoutOutcome, CheckoutOutcomeService>();
         services.AddScoped<IStripeWebhookParser, StripeWebhookParser>();
         services.AddScoped<IStripeWebhooks, StripeWebhookService>();
         services.AddScoped<IReservationSweep, ReservationSweepService>();
+        services.AddScoped<IOrderPaymentReconciliation, OrderPaymentReconciliationService>();
+        services.AddScoped<IOrderHoldRelease, OrderHoldReleaseService>();
+        services.Configure<OrderNotificationOptions>(configuration.GetSection(OrderNotificationOptions.SectionName));
+        services.AddScoped<IOrderNotificationDispatch, OrderNotificationDispatchService>();
+        services.AddScoped<IOrderMailSender>(provider =>
+        {
+            var notificationOptions = provider.GetRequiredService<IOptions<OrderNotificationOptions>>().Value;
+            return string.Equals(notificationOptions.Delivery, OrderNotificationDelivery.Capture, StringComparison.Ordinal)
+                ? new MailpitOrderMailSender(notificationOptions)
+                : new DisabledOrderMailSender();
+        });
         services.AddSingleton<StripeWebhookFailureProbe>();
         services.AddSingleton<ReservationSweepFailureProbe>();
         if (string.Equals(configuration["Stripe:Gateway"], "Stub", StringComparison.OrdinalIgnoreCase))

@@ -97,6 +97,43 @@ public sealed class StripeCheckoutGateway(IConfiguration configuration, ILogger<
         }
     }
 
+    public async Task<StoredSessionRead> ReadStoredSessionAsync(
+        string sessionId,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var secret = StripeCheckoutGuard.RequireTestSecret(
+                configuration["Stripe:SecretKey"] ?? configuration["STRIPE_SECRET_KEY"]);
+            if (string.IsNullOrWhiteSpace(sessionId)
+                || !sessionId.StartsWith("cs_test_", StringComparison.Ordinal)
+                || StripeCheckoutGuard.IsLiveObjectId(sessionId))
+            {
+                return StoredSessionRead.Unavailable();
+            }
+
+            var service = new SessionService(new StripeClient(secret));
+            var session = await ReadAsync(service, sessionId, cancellationToken);
+            return StoredSessionRead.Retrieved(Observe(session));
+        }
+        catch (StripeException exception) when (exception.StripeError?.Code == "resource_missing")
+        {
+            return StoredSessionRead.Missing();
+        }
+        catch (StripeCheckoutException)
+        {
+            logger.LogWarning("Stripe no está disponible para leer la sesión guardada.");
+            return StoredSessionRead.Unavailable();
+        }
+        catch (StripeException exception)
+        {
+            logger.LogWarning(
+                "Stripe no ha devuelto la sesión guardada. Código {StripeErrorCode}.",
+                exception.StripeError?.Code);
+            return StoredSessionRead.Unavailable();
+        }
+    }
+
     private static async Task<IReadOnlyList<string>?> FindByOrderAsync(
         SessionService service,
         Guid orderId,

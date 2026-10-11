@@ -531,7 +531,7 @@
                         <input id="edit-alcohol" maxlength="6" inputmode="decimal" />
                     </div>
                     <div id="edit-stock" hidden>
-                        <label for="edit-stock-input">Stock actual</label>
+                        <label id="edit-stock-label" for="edit-stock-input">Stock actual</label>
                         <input id="edit-stock-input" type="number" inputmode="numeric" min="0" max="@InventoryLimits.MaxStockQuantity" step="1" />
                     </div>
                     <div id="edit-pack" hidden>
@@ -1295,6 +1295,7 @@
                     document.getElementById('edit-vintage').value = data.vintage || '';
                     document.getElementById('edit-grape').value = data.grape || '';
                     document.getElementById('edit-alcohol').value = data.alcohol || '';
+                    document.getElementById('edit-stock-label').textContent = data.stock == null ? 'Stock inicial' : 'Stock actual';
                     document.getElementById('edit-stock-input').value = data.stock == null ? '' : String(data.stock);
                     editComponents.replaceChildren();
                     if (isPack) {

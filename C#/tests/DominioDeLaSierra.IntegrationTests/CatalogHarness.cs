@@ -129,6 +129,15 @@ internal sealed class CatalogHarness(IServiceProvider services)
         return await db.Set<T>().CountAsync();
     }
 
+    public async Task RemoveStockAsync(Guid productId)
+    {
+        await using var scope = services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<DominioDeLaSierra.Infrastructure.Persistence.ApplicationDbContext>();
+        var stocks = await db.Stocks.Where(item => item.ProductId == productId).ToListAsync();
+        db.Stocks.RemoveRange(stocks);
+        await db.SaveChangesAsync();
+    }
+
     public async Task<Stock?> StockAsync(Guid productId)
     {
         await using var scope = services.CreateAsyncScope();

@@ -5,10 +5,12 @@ import { environment } from '../../environments/environment';
 import {
   CheckoutCustomerInput,
   CheckoutLineInput,
+  CheckoutOutcome,
   CheckoutPayment,
   CheckoutQuote,
   CheckoutSession,
   GuestOrder,
+  checkoutOutcomePayload,
   paymentSessionPayload,
   placePayload,
   quotePayload
@@ -42,6 +44,14 @@ export class CheckoutService {
     return this.http.post<CheckoutSession>(
       `${environment.apiBaseUrl}/api/v1/checkout/payment-sessions`,
       paymentSessionPayload(orderId),
+      { headers: { 'Checkout-Access-Token': checkoutAccessToken } }
+    );
+  }
+
+  outcome(orderId: string, checkoutAccessToken: string): Observable<CheckoutOutcome> {
+    return this.http.post<CheckoutOutcome>(
+      `${environment.apiBaseUrl}/api/v1/checkout/outcome`,
+      checkoutOutcomePayload(orderId),
       { headers: { 'Checkout-Access-Token': checkoutAccessToken } }
     );
   }

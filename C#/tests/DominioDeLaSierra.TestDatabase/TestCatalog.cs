@@ -23,8 +23,8 @@ public static class TestCatalog
 
     public static async Task EnsureAsync()
     {
-        TestAccounts.EnsureSafeDatabase(TestAccounts.DatabaseName, "localhost");
-        await CreateDatabaseIfNeededAsync();
+        var databaseName = TestAccounts.RequireDestructiveDatabase(TestAccounts.DatabaseName, "localhost");
+        await CreateDatabaseIfNeededAsync(databaseName);
         await using var db = CreateContext();
         await db.Database.MigrateAsync();
     }
@@ -80,7 +80,7 @@ public static class TestCatalog
 
     public static async Task DropAsync()
     {
-        TestAccounts.EnsureSafeDatabase(TestAccounts.DatabaseName, "localhost");
+        var dropStatement = DatabaseGuard.AutomatedTestDropStatement();
         await RunDockerAsync(
             "psql",
             "-U",
@@ -90,7 +90,7 @@ public static class TestCatalog
             "-v",
             "ON_ERROR_STOP=1",
             "-c",
-            $"DROP DATABASE IF EXISTS {TestAccounts.DatabaseName} WITH (FORCE);");
+            dropStatement);
     }
 
     public static string FixtureDirectory()
@@ -143,10 +143,7 @@ public static class TestCatalog
             })
             .Build();
         var connectionString = PostgresConnection.Build(configuration);
-        if (!connectionString.Contains($"Database={TestAccounts.DatabaseName}", StringComparison.OrdinalIgnoreCase))
-        {
-            throw new InvalidOperationException("La cadena de conexión de pruebas no apunta a dominio_sierra_tests.");
-        }
+        DatabaseGuard.EnsureAutomatedTestConnection(connectionString);
 
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseNpgsql(connectionString)
@@ -154,8 +151,9 @@ public static class TestCatalog
         return new ApplicationDbContext(options);
     }
 
-    private static async Task CreateDatabaseIfNeededAsync()
+    private static async Task CreateDatabaseIfNeededAsync(string databaseName)
     {
+        var name = TestAccounts.RequireDestructiveDatabase(databaseName, "localhost");
         var existing = await RunDockerAsync(
             "psql",
             "-U",
@@ -163,7 +161,7 @@ public static class TestCatalog
             "-d",
             "dominio_sierra",
             "-tAc",
-            $"SELECT 1 FROM pg_database WHERE datname = '{TestAccounts.DatabaseName}'");
+            DatabaseGuard.AutomatedTestExistsQuery());
         if (existing.Contains('1', StringComparison.Ordinal))
         {
             return;
@@ -173,7 +171,7 @@ public static class TestCatalog
             "createdb",
             "-U",
             "dominio_sierra_app",
-            TestAccounts.DatabaseName);
+            name);
     }
 
     private static async Task<string> RunDockerAsync(string command, params string[] arguments)

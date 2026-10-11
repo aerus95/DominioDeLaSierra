@@ -1,7 +1,9 @@
 using System.Text.Json;
+using DominioDeLaSierra.Application.Admin;
 using DominioDeLaSierra.Application.Common;
 using DominioDeLaSierra.Domain;
 using DominioDeLaSierra.Domain.Entities;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace DominioDeLaSierra.IntegrationTests;
 
@@ -240,5 +242,67 @@ public sealed class InventoryTests(PostgresFixture fixture) : DatabaseTest(fixtu
         Assert.Equal(0, await harness.CountAsync<Wine>());
         Assert.Equal(1, await harness.CountAsync<Stock>());
         Assert.Equal(0, await harness.CountAsync<ProductComponent>());
+    }
+
+    [Fact]
+    public async Task Missing_inventory_is_initialized_with_an_opening_balance()
+    {
+        var harness = new CatalogHarness(Fixture.Factory.Services);
+        var categoryId = await harness.CreateCategoryAsync();
+        var untouched = await harness.CreateProductAsync(categoryId, "TEST-KEEP", initialStock: 4);
+        var created = await harness.CreateProductAsync(categoryId, "TEST-MISSING");
+        var untouchedStockId = (await harness.StockAsync(untouched.Id))!.Id;
+        await harness.RemoveStockAsync(created.Id);
+        var reservationsBefore = await harness.CountAsync<StockReservation>();
+
+        await using (var scope = Fixture.Factory.Services.CreateAsyncScope())
+        {
+            var editor = await scope.ServiceProvider
+                .GetRequiredService<IAdminCatalogQueries>()
+                .GetProductEditorAsync(created.Id);
+            Assert.NotNull(editor);
+            Assert.Null(editor.Stock);
+        }
+
+        await harness.UpdateAsync(created.Id, draft => draft.Stock = "12");
+
+        var stock = await harness.StockAsync(created.Id);
+        var movement = Assert.Single(await harness.MovementsAsync(created.Id));
+        var untouchedStock = await harness.StockAsync(untouched.Id);
+
+        Assert.Equal(12, stock!.Quantity);
+        Assert.Equal(StockMovementType.InitialStock, movement.Type);
+        Assert.Equal(12, movement.Quantity);
+        Assert.Equal(InventoryLimits.InitialStockNote, movement.Note);
+        Assert.Equal(untouchedStockId, untouchedStock!.Id);
+        Assert.Equal(4, untouchedStock.Quantity);
+        Assert.Equal(2, await harness.CountAsync<Stock>());
+        Assert.Equal(reservationsBefore, await harness.CountAsync<StockReservation>());
+    }
+
+    [Fact]
+    public async Task Existing_stock_is_adjusted_without_replacing_the_row()
+    {
+        var harness = new CatalogHarness(Fixture.Factory.Services);
+        var categoryId = await harness.CreateCategoryAsync();
+        var created = await harness.CreateProductAsync(categoryId, "TEST-EXISTING", initialStock: 10);
+        var stockId = (await harness.StockAsync(created.Id))!.Id;
+        var reservationsBefore = await harness.CountAsync<StockReservation>();
+
+        await harness.UpdateAsync(created.Id, draft => draft.Stock = "16");
+
+        var stock = await harness.StockAsync(created.Id);
+        var movements = await harness.MovementsAsync(created.Id);
+
+        Assert.Equal(stockId, stock!.Id);
+        Assert.Equal(16, stock.Quantity);
+        Assert.Equal(2, movements.Count);
+        Assert.Contains(movements, item => item.Type == StockMovementType.InitialStock && item.Quantity == 10);
+        Assert.Contains(movements, item =>
+            item.Type == StockMovementType.Adjustment
+            && item.Quantity == 6
+            && item.Note == InventoryLimits.AdjustmentNote);
+        Assert.Equal(1, await harness.CountAsync<Stock>());
+        Assert.Equal(reservationsBefore, await harness.CountAsync<StockReservation>());
     }
 }

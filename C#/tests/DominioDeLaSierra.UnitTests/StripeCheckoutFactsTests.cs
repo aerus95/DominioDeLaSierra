@@ -83,19 +83,77 @@ public class StripeCheckoutFactsTests
         Assert.Equal(StripeWebhookRules.AmountMessage, reason);
     }
 
+    [Fact]
+    public void Accepts_a_test_payment_intent_without_requiring_the_pi_test_prefix()
+    {
+        var documented = Attention("pi_3MtwBwLkdIwHu7ix28a3tqPa");
+        var lettersInsideTheBody = Attention("pi_3MtwLiveHu7ix28a3tqPa");
+        var fixture = Attention("pi_test_ok");
+        var paid = StripeCheckoutFacts.Classify(
+            Session("cs_test_paid", "complete", "paid", "succeeded", intentId: "pi_3MtwBwLkdIwHu7ix28a3tqPa"),
+            OrderId);
+
+        Assert.Null(documented);
+        Assert.Null(lettersInsideTheBody);
+        Assert.Null(fixture);
+        Assert.Equal(StripeCheckoutFact.Paid, paid.Fact);
+        Assert.Null(paid.AttentionReason);
+    }
+
+    [Fact]
+    public void Rejects_a_payment_intent_from_an_incompatible_context()
+    {
+        Assert.Equal(StripeWebhookRules.IntentMessage, Attention(null));
+        Assert.Equal(StripeWebhookRules.IntentMessage, Attention(""));
+        Assert.Equal(StripeWebhookRules.IntentMessage, Attention("pi_"));
+        Assert.Equal(StripeWebhookRules.IntentMessage, Attention("pi_live_3MtwBwLkdIwHu7ix28a3tqPa"));
+        Assert.Equal(StripeWebhookRules.IntentMessage, Attention("seti_3MtwBwLkdIwHu7ix28a3tqPa"));
+        Assert.Equal(StripeWebhookRules.IntentMessage, Attention("pi_3Mtw BwLkdIwHu7ix"));
+
+        var liveMode = StripeCheckoutFacts.Classify(
+            Session("cs_test_paid", "complete", "paid", "succeeded", live: true, intentId: "pi_3MtwBwLkdIwHu7ix28a3tqPa"),
+            OrderId);
+        var liveSession = StripeCheckoutFacts.Classify(
+            Session("cs_live_a11YYufWQzNY63zpQ6QSNRQhkUpVph4", "complete", "paid", "succeeded", intentId: "pi_3MtwBwLkdIwHu7ix28a3tqPa"),
+            OrderId);
+
+        Assert.Equal(StripeCheckoutFact.Contradiction, liveMode.Fact);
+        Assert.Equal(StripeCheckoutGuard.TestKeyMessage, liveMode.AttentionReason);
+        Assert.Equal(StripeCheckoutFact.Contradiction, liveSession.Fact);
+        Assert.Equal(StripeCheckoutGuard.TestKeyMessage, liveSession.AttentionReason);
+        Assert.False(StripeCheckoutGuard.IsTestPaymentIntent("sk_live_123"));
+    }
+
+    private static string? Attention(string? paymentIntentId)
+    {
+        return PaidSessionRules.Attention(
+            4580,
+            "eur",
+            paymentIntentId,
+            OrderId.ToString("D"),
+            OrderId.ToString("D"),
+            OrderStatus.PendingPayment,
+            PaymentStatus.Pending,
+            4580,
+            4580,
+            OrderId,
+            StockReservationStatus.Reserved);
+    }
+
     private static ObservedCheckoutSession Session(
         string id,
         string status,
         string paymentStatus,
         string? intentStatus,
         bool live = false,
-        long amount = 4580)
+        long amount = 4580,
+        string intentId = "pi_test_intent")
     {
         return new ObservedCheckoutSession(
             id,
             status,
             paymentStatus,
-            "pi_test_intent",
+            intentId,
             intentStatus,
             amount,
             "eur",

@@ -176,10 +176,6 @@ public sealed class AdminCatalogQueries(ApplicationDbContext dbContext) : IAdmin
                 .Where(item => item.ProductId == product.Id && item.Warehouse.IsDefault)
                 .Select(item => (int?)item.Quantity)
                 .FirstOrDefaultAsync(cancellationToken);
-            if (stock is null)
-            {
-                throw new InvalidOperationException(CatalogRevision.MissingStockMessage);
-            }
         }
 
         return new AdminProductEditorDto(

@@ -177,6 +177,31 @@
                         }
                     </dl>
                 }
+                @if (Model.CanReconcile
+                    && order.Status == DominioDeLaSierra.Domain.OrderStatus.PendingPayment
+                    && order.Reservation?.Status is DominioDeLaSierra.Domain.StockReservationStatus.Reserved
+                        or DominioDeLaSierra.Domain.StockReservationStatus.Confirming)
+                {
+                    <form class="ship-form" method="post" asp-page-handler="Reconcile">
+                        <input type="hidden" name="orderNumber" value="@order.Number">
+                        <div class="full">
+                            <button type="submit">Reconciliar este cobro</button>
+                        </div>
+                    </form>
+                    <p class="muted">Comprueba en Stripe la sesión guardada de este pedido. Si el cobro está pagado, lo confirma sin volver a descontar el stock.</p>
+                }
+                @if (Model.CanReconcile
+                    && order.Status == DominioDeLaSierra.Domain.OrderStatus.PendingPayment
+                    && order.Reservation?.Status == DominioDeLaSierra.Domain.StockReservationStatus.Reserved)
+                {
+                    <form class="ship-form" method="post" asp-page-handler="ReleaseHold">
+                        <input type="hidden" name="orderNumber" value="@order.Number">
+                        <div class="full">
+                            <button type="submit">Liberar reserva caducada</button>
+                        </div>
+                    </form>
+                    <p class="muted">Si Stripe muestra la sesión impagada y caducada, devuelve la unidad reservada y caduca este pedido.</p>
+                }
             </section>
 
             <section class="card">

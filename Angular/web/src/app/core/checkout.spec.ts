@@ -11,9 +11,22 @@ import {
   paymentSessionPayload,
   placePayload,
   quotePayload,
+  CHECKOUT_CANCEL_PATH,
+  CHECKOUT_CONFIRMED_MESSAGE,
+  CHECKOUT_INCOMPLETE_MESSAGE,
+  CHECKOUT_SUCCESS_PATH,
+  CHECKOUT_UNKNOWN_MESSAGE,
+  CHECKOUT_VERIFYING_MESSAGE,
+  checkoutAmount,
+  checkoutOutcomeCopy,
+  checkoutOutcomePayload,
+  checkoutOutcomeView,
+  nextCheckoutPoll,
   readCheckoutAccess,
+  readCurrentCheckout,
   forgetIdempotencyKey,
   rememberCheckoutAccess,
+  rememberCurrentCheckout,
   resolveIdempotencyKey,
   stripeCheckoutUrl
 } from './checkout.ts';
@@ -117,5 +130,46 @@ describe('presupuesto del checkout', () => {
     const key = resolveIdempotencyKey(signature, removable);
     forgetIdempotencyKey(signature, removable);
     assert.notEqual(key, resolveIdempotencyKey(signature, removable));
+  });
+
+  it('consulta el estado con el pedido y el token, sin datos personales ni claves', () => {
+    const orderId = 'bbbbbbbb-cccc-dddd-eeee-ffffffffffff';
+    const payload = checkoutOutcomePayload(orderId);
+    assert.deepEqual(payload, { orderId });
+    assert.equal(JSON.stringify(payload).includes('token'), false);
+    assert.equal(JSON.stringify(payload).includes('email'), false);
+    assert.equal(CHECKOUT_SUCCESS_PATH.includes('?'), false);
+    assert.equal(CHECKOUT_CANCEL_PATH.includes('?'), false);
+    assert.equal(checkoutOutcomeView('Paid', false), 'confirmed');
+    assert.equal(checkoutOutcomeView('PendingPayment', false), 'verifying');
+    assert.equal(checkoutOutcomeView('Expired', false), 'incomplete');
+    assert.equal(checkoutOutcomeView('Cancelled', false), 'incomplete');
+    assert.equal(checkoutOutcomeView('Paid', true), 'unknown');
+    assert.equal(checkoutOutcomeView('Refunded', false), 'unknown');
+    assert.equal(checkoutOutcomeCopy('confirmed'), CHECKOUT_CONFIRMED_MESSAGE);
+    assert.equal(checkoutOutcomeCopy('verifying'), CHECKOUT_VERIFYING_MESSAGE);
+    assert.equal(checkoutOutcomeCopy('incomplete'), CHECKOUT_INCOMPLETE_MESSAGE);
+    assert.match(checkoutOutcomeCopy('unknown'), /consultar/);
+    assert.equal(CHECKOUT_UNKNOWN_MESSAGE.includes('fall'), false);
+    assert.equal(nextCheckoutPoll('verifying', 1), 2000);
+    assert.equal(nextCheckoutPoll('verifying', 8), null);
+    assert.equal(nextCheckoutPoll('confirmed', 1), null);
+    const amount = checkoutAmount(1700, 'EUR')?.replace(/\s/g, ' ');
+    assert.match(amount ?? '', /17,00/);
+    assert.match(amount ?? '', /€/);
+    assert.equal(checkoutAmount(1700, 'USD'), null);
+  });
+
+  it('recuerda el checkout actual y no lo sustituye por un reintento sin token', () => {
+    const memory = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => memory.get(key) ?? null,
+      setItem: (key: string, value: string) => { memory.set(key, value); }
+    };
+    const orderId = 'bbbbbbbb-cccc-dddd-eeee-ffffffffffff';
+    rememberCurrentCheckout(orderId, 'token-opaco-de-acceso-1', storage);
+    rememberCurrentCheckout(orderId, null, storage);
+    assert.deepEqual(readCurrentCheckout(storage), { orderId, token: 'token-opaco-de-acceso-1' });
+    assert.equal(readCurrentCheckout(storage)?.token.includes('sk_'), false);
   });
 });

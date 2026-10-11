@@ -6,8 +6,10 @@ using DominioDeLaSierra.Domain.Entities;
 namespace DominioDeLaSierra.Infrastructure.Checkout;
 
 /// <summary>
-/// Confirma un cobro ya contrastado. El webhook y el barrido de reservas usan el mismo camino,
-/// dentro de una transacción que el llamador ya tiene abierta.
+/// Confirma un cobro ya contrastado. El webhook, la reconciliación y el barrido usan el mismo camino,
+/// dentro de una transacción que el llamador ya tiene abierta. La confirmación pendiente se añade
+/// al pedido solo cuando este método termina, y el llamador la guarda con el pago. Si lanza,
+/// el llamador no guarda y la transacción revierte el cobro.
 /// </summary>
 sealed class CheckoutSettlement(IOrderStock orderStock)
 {
@@ -38,5 +40,7 @@ sealed class CheckoutSettlement(IOrderStock orderStock)
         {
             await orderStock.ConfirmPaymentAsync(order.Id, now, cancellationToken);
         }
+
+        order.RecordPaidConfirmation(now);
     }
 }

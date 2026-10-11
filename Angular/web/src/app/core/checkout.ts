@@ -71,8 +71,16 @@ export interface CheckoutPayment {
   checkoutAccessToken?: string | null;
 }
 
+export const CHECKOUT_SUCCESS_PATH = '/checkout/exito';
+export const CHECKOUT_CANCEL_PATH = '/checkout/cancelado';
 export const CHECKOUT_SUCCESS_MESSAGE = 'El pago está en proceso de verificación. Esta página no confirma el cobro.';
 export const CHECKOUT_CANCEL_MESSAGE = 'Has vuelto sin completar el pago. El pedido sigue pendiente y la caja no se ha vaciado.';
+export const CHECKOUT_CONFIRMED_MESSAGE = 'Pago confirmado.';
+export const CHECKOUT_VERIFYING_MESSAGE = 'Estamos verificando el pago.';
+export const CHECKOUT_INCOMPLETE_MESSAGE = 'Pago no completado.';
+export const CHECKOUT_UNKNOWN_MESSAGE = 'No podemos consultar el estado del pago desde esta página.';
+export const CHECKOUT_OUTCOME_ATTEMPTS = 8;
+export const CHECKOUT_OUTCOME_DELAYS_MS = [2000, 3000, 5000, 8000, 8000, 8000, 8000] as const;
 export const HOLD_RELEASED_MESSAGE = 'No queda margen para un pago de 30 minutos. La reserva se ha liberado.';
 
 export function eurosFromCents(cents: number): number {
@@ -120,6 +128,75 @@ export function placePayload(customer: CheckoutCustomerInput, lines: readonly Ch
 
 export function paymentSessionPayload(orderId: string) {
   return { orderId };
+}
+
+export function checkoutOutcomePayload(orderId: string) {
+  return { orderId };
+}
+
+export type CheckoutOutcomeView = 'loading' | 'confirmed' | 'verifying' | 'incomplete' | 'unknown';
+
+export interface CheckoutOutcome {
+  number: string;
+  status: string;
+  totalCents: number;
+  currency: string;
+}
+
+export interface CurrentCheckout {
+  orderId: string;
+  token: string;
+}
+
+const currentCheckoutKey = 'ds-checkout-current';
+
+export function rememberCurrentCheckout(
+  orderId: string,
+  token: string | null | undefined,
+  storage: Pick<Storage, 'getItem' | 'setItem'> | null
+): void {
+  if (!orderId || !token) return;
+  storage?.setItem(currentCheckoutKey, JSON.stringify({ orderId, token }));
+}
+
+export function readCurrentCheckout(storage: Pick<Storage, 'getItem'> | null): CurrentCheckout | null {
+  const raw = storage?.getItem(currentCheckoutKey);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as { orderId?: unknown; token?: unknown };
+    if (typeof parsed.orderId !== 'string' || typeof parsed.token !== 'string') return null;
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(parsed.orderId)) return null;
+    if (parsed.token.length < 20 || parsed.token.length > 128) return null;
+    return { orderId: parsed.orderId, token: parsed.token };
+  } catch {
+    return null;
+  }
+}
+
+export function checkoutOutcomeView(status: string | null, failed: boolean): CheckoutOutcomeView {
+  if (failed || status === null) return 'unknown';
+  if (status === 'Paid') return 'confirmed';
+  if (status === 'PendingPayment') return 'verifying';
+  if (status === 'Expired' || status === 'Cancelled') return 'incomplete';
+  return 'unknown';
+}
+
+export function checkoutOutcomeCopy(view: CheckoutOutcomeView): string {
+  if (view === 'confirmed') return CHECKOUT_CONFIRMED_MESSAGE;
+  if (view === 'verifying') return CHECKOUT_VERIFYING_MESSAGE;
+  if (view === 'incomplete') return CHECKOUT_INCOMPLETE_MESSAGE;
+  if (view === 'loading') return 'Estamos consultando el pago.';
+  return CHECKOUT_UNKNOWN_MESSAGE;
+}
+
+export function nextCheckoutPoll(view: CheckoutOutcomeView, completed: number): number | null {
+  if (view !== 'verifying' || completed >= CHECKOUT_OUTCOME_ATTEMPTS) return null;
+  return CHECKOUT_OUTCOME_DELAYS_MS[Math.min(completed - 1, CHECKOUT_OUTCOME_DELAYS_MS.length - 1)] ?? null;
+}
+
+export function checkoutAmount(cents: number, currency: string): string | null {
+  if (!Number.isInteger(cents) || cents < 0 || currency !== 'EUR') return null;
+  return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(cents / 100);
 }
 
 export function rememberCheckoutAccess(

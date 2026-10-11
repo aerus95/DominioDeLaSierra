@@ -16,6 +16,8 @@ public sealed class PostgresFixture : IAsyncLifetime
         Directory.CreateDirectory(mediaRoot);
         Factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
+            builder.UseSetting("Database:Name", TestAccounts.DatabaseName);
+            builder.UseSetting("Database:Host", "localhost");
             builder.UseSetting("Media:RootPath", mediaRoot);
             builder.UseSetting("Stripe:WebhookSecret", StripeWebhookSignatures.Secret);
             builder.UseEnvironment("Testing");

@@ -87,6 +87,18 @@ public sealed record GuestOrderPlacement(GuestOrderDto Order, bool Created);
 
 public sealed record StartCheckoutSessionRequest(Guid OrderId);
 
+public sealed record CheckoutOutcomeRequest(Guid OrderId);
+
+public sealed record CheckoutOutcomeDto(string Number, string Status, long TotalCents, string Currency);
+
+public interface ICheckoutOutcome
+{
+    Task<CheckoutOutcomeDto> ReadAsync(
+        Guid orderId,
+        string? checkoutAccessToken,
+        CancellationToken cancellationToken = default);
+}
+
 public sealed record CheckoutSessionDto(string CheckoutUrl, DateTimeOffset ExpiresAt);
 
 public sealed record CheckoutPaymentDto(
@@ -115,6 +127,31 @@ public sealed record StripeCheckoutDraft(
 
 public sealed record CreatedStripeCheckout(string SessionId, string Url, long AmountCents, DateTimeOffset ExpiresAt);
 
+public enum StoredSessionAvailability
+{
+    Retrieved,
+    Missing,
+    Unavailable
+}
+
+public sealed record StoredSessionRead(StoredSessionAvailability Availability, ObservedCheckoutSession? Session)
+{
+    public static StoredSessionRead Retrieved(ObservedCheckoutSession session)
+    {
+        return new StoredSessionRead(StoredSessionAvailability.Retrieved, session);
+    }
+
+    public static StoredSessionRead Missing()
+    {
+        return new StoredSessionRead(StoredSessionAvailability.Missing, null);
+    }
+
+    public static StoredSessionRead Unavailable()
+    {
+        return new StoredSessionRead(StoredSessionAvailability.Unavailable, null);
+    }
+}
+
 public interface IStripeCheckoutGateway
 {
     Task<CreatedStripeCheckout> CreateAsync(
@@ -124,6 +161,10 @@ public interface IStripeCheckoutGateway
 
     Task<StripeSessionInspection> InspectAsync(
         StripeSessionQuery query,
+        CancellationToken cancellationToken = default);
+
+    Task<StoredSessionRead> ReadStoredSessionAsync(
+        string sessionId,
         CancellationToken cancellationToken = default);
 }
 
