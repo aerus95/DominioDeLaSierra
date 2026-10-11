@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 namespace DominioDeLaSierra.Infrastructure.Persistence;
 
 /// <summary>
-/// Un Payment con Guid asignado en el dominio no es una clave temporal.
+/// Un hijo con Guid asignado en el dominio no es una clave temporal.
 /// Si se añade a un pedido ya seguido, EF lo marca como Modified y el UPDATE no afecta a ninguna fila.
 /// Cuando ese identificador aún no existe, la inserción debe quedar explícitamente en Added.
 /// </summary>
@@ -41,6 +41,7 @@ public sealed class TrackNewPaymentsInterceptor : SaveChangesInterceptor
             Promote<Payment>(context, static (db, id) => db.Set<Payment>().AsNoTracking().Any(item => item.Id == id));
             Promote<PaymentEvent>(context, static (db, id) => db.Set<PaymentEvent>().AsNoTracking().Any(item => item.Id == id));
             Promote<FulfillmentTransition>(context, static (db, id) => db.Set<FulfillmentTransition>().AsNoTracking().Any(item => item.Id == id));
+            Promote<OrderNotification>(context, static (db, id) => db.Set<OrderNotification>().AsNoTracking().Any(item => item.Id == id));
         }
         finally
         {
@@ -61,6 +62,7 @@ public sealed class TrackNewPaymentsInterceptor : SaveChangesInterceptor
             await PromoteAsync<Payment>(context, (db, id, token) => db.Set<Payment>().AsNoTracking().AnyAsync(item => item.Id == id, token), cancellationToken);
             await PromoteAsync<PaymentEvent>(context, (db, id, token) => db.Set<PaymentEvent>().AsNoTracking().AnyAsync(item => item.Id == id, token), cancellationToken);
             await PromoteAsync<FulfillmentTransition>(context, (db, id, token) => db.Set<FulfillmentTransition>().AsNoTracking().AnyAsync(item => item.Id == id, token), cancellationToken);
+            await PromoteAsync<OrderNotification>(context, (db, id, token) => db.Set<OrderNotification>().AsNoTracking().AnyAsync(item => item.Id == id, token), cancellationToken);
         }
         finally
         {

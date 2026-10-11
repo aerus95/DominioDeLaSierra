@@ -145,7 +145,7 @@ public sealed class AdminOrderTests(PostgresFixture fixture) : DatabaseTest(fixt
         Assert.DoesNotContain("Nombre vivo del catálogo", html, StringComparison.Ordinal);
         Assert.Contains("Pendiente", html, StringComparison.Ordinal);
         Assert.Contains("El importe no coincide.", html, StringComparison.Ordinal);
-        Assert.Contains("cs_test_admin_detail", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("cs_test_admin_detail", html, StringComparison.Ordinal);
         Assert.DoesNotContain("secret-session", html, StringComparison.Ordinal);
         Assert.DoesNotContain("checkout.stripe.com", html, StringComparison.Ordinal);
         Assert.DoesNotContain(order.CheckoutAccessTokenHash, html, StringComparison.Ordinal);

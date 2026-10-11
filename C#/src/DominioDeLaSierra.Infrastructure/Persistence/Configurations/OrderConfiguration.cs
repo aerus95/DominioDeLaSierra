@@ -96,6 +96,10 @@ public sealed class OrderConfiguration : IEntityTypeConfiguration<Order>
             .HasMaxLength(Order.PhoneMaxLength)
             .IsRequired();
 
+        builder.Property(order => order.CustomerTaxId)
+            .HasColumnType($"character varying({FiscalIdentity.TaxIdMaxLength})")
+            .HasMaxLength(FiscalIdentity.TaxIdMaxLength);
+
         builder.Property(order => order.AddressLine)
             .HasColumnType($"character varying({Order.AddressLineMaxLength})")
             .HasMaxLength(Order.AddressLineMaxLength)

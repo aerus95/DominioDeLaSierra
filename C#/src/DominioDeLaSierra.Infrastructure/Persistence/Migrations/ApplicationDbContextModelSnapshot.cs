@@ -140,6 +140,245 @@ namespace DominioDeLaSierra.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("DominioDeLaSierra.Domain.Entities.Invoice", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("BuyerAddressLine")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("BuyerAddressLine");
+
+                    b.Property<string>("BuyerCity")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("BuyerCity");
+
+                    b.Property<string>("BuyerCountryCode")
+                        .IsRequired()
+                        .HasMaxLength(2)
+                        .HasColumnType("character varying(2)")
+                        .HasColumnName("BuyerCountryCode");
+
+                    b.Property<string>("BuyerName")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("BuyerName");
+
+                    b.Property<string>("BuyerPostalCode")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("BuyerPostalCode");
+
+                    b.Property<string>("BuyerProvince")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("BuyerProvince");
+
+                    b.Property<string>("BuyerTaxId")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("BuyerTaxId");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)");
+
+                    b.Property<bool>("Fictional")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("FullNumber")
+                        .IsRequired()
+                        .HasMaxLength(12)
+                        .HasColumnType("character varying(12)");
+
+                    b.Property<DateTimeOffset>("IssuedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Number")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("OrderNumber")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<long>("ProductSubtotalCents")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("ProductTaxableBaseCents")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("ProductVatCents")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("SellerAddressLine")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("SellerAddressLine");
+
+                    b.Property<string>("SellerCity")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("SellerCity");
+
+                    b.Property<string>("SellerCountryCode")
+                        .IsRequired()
+                        .HasMaxLength(2)
+                        .HasColumnType("character varying(2)")
+                        .HasColumnName("SellerCountryCode");
+
+                    b.Property<string>("SellerLegalName")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("SellerLegalName");
+
+                    b.Property<string>("SellerPostalCode")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("SellerPostalCode");
+
+                    b.Property<string>("SellerProvince")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("SellerProvince");
+
+                    b.Property<string>("SellerTaxId")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("SellerTaxId");
+
+                    b.Property<string>("Series")
+                        .IsRequired()
+                        .HasMaxLength(5)
+                        .HasColumnType("character varying(5)");
+
+                    b.Property<long>("ShippingCents")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("ShippingTaxableBaseCents")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("ShippingVatCents")
+                        .HasColumnType("bigint");
+
+                    b.Property<decimal>("ShippingVatRate")
+                        .HasColumnType("numeric(5,2)");
+
+                    b.Property<long>("TotalCents")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FullNumber")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Invoices_FullNumber");
+
+                    b.HasIndex("OrderId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Invoices_OrderId");
+
+                    b.HasIndex("Series", "Number")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Invoices_Series_Number");
+
+                    b.ToTable("Invoices", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_Invoices_Amounts", "\"ProductSubtotalCents\" >= 0\nAND \"ProductTaxableBaseCents\" >= 0\nAND \"ProductVatCents\" >= 0\nAND \"ShippingCents\" >= 0\nAND \"ShippingTaxableBaseCents\" >= 0\nAND \"ShippingVatCents\" >= 0\nAND \"TotalCents\" >= 0\nAND \"ProductTaxableBaseCents\" + \"ProductVatCents\" = \"ProductSubtotalCents\"\nAND \"ShippingTaxableBaseCents\" + \"ShippingVatCents\" = \"ShippingCents\"\nAND \"TotalCents\" = \"ProductSubtotalCents\" + \"ShippingCents\"\nAND \"ShippingVatRate\" >= 0\nAND \"ShippingVatRate\" <= 999.99");
+
+                            t.HasCheckConstraint("CK_Invoices_Currency", "\"Currency\" = 'EUR'");
+
+                            t.HasCheckConstraint("CK_Invoices_Number", "\"Number\" >= 1\nAND \"Number\" <= 999999");
+                        });
+                });
+
+            modelBuilder.Entity("DominioDeLaSierra.Domain.Entities.InvoiceLine", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("InvoiceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<long>("LineTotalCents")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Reference")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<long>("TaxableBaseCents")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("UnitPriceCents")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("VatCents")
+                        .HasColumnType("bigint");
+
+                    b.Property<decimal>("VatRate")
+                        .HasColumnType("numeric(5,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InvoiceId", "Position")
+                        .IsUnique()
+                        .HasDatabaseName("IX_InvoiceLines_InvoiceId_Position");
+
+                    b.ToTable("InvoiceLines", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_InvoiceLines_Amounts", "\"Position\" > 0\nAND \"Quantity\" > 0\nAND \"Quantity\" <= 1000000\nAND \"UnitPriceCents\" >= 0\nAND \"LineTotalCents\" >= 0\nAND \"TaxableBaseCents\" >= 0\nAND \"VatCents\" >= 0\nAND \"LineTotalCents\" = \"UnitPriceCents\" * \"Quantity\"\nAND \"TaxableBaseCents\" + \"VatCents\" = \"LineTotalCents\"\nAND \"VatRate\" >= 0\nAND \"VatRate\" <= 999.99");
+                        });
+                });
+
+            modelBuilder.Entity("DominioDeLaSierra.Domain.Entities.InvoiceSeries", b =>
+                {
+                    b.Property<string>("Code")
+                        .HasMaxLength(5)
+                        .HasColumnType("character varying(5)");
+
+                    b.Property<int>("NextNumber")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Code");
+
+                    b.ToTable("InvoiceSeries", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_InvoiceSeries_Number", "\"NextNumber\" >= 1\nAND \"NextNumber\" <= 1000000");
+                        });
+                });
+
             modelBuilder.Entity("DominioDeLaSierra.Domain.Entities.Order", b =>
                 {
                     b.Property<Guid>("Id")
@@ -185,6 +424,10 @@ namespace DominioDeLaSierra.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(150)
                         .HasColumnType("character varying(150)");
+
+                    b.Property<string>("CustomerTaxId")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
 
                     b.Property<string>("DeliveryNotes")
                         .HasMaxLength(500)
@@ -886,6 +1129,26 @@ namespace DominioDeLaSierra.Infrastructure.Persistence.Migrations
                     b.Navigation("Order");
                 });
 
+            modelBuilder.Entity("DominioDeLaSierra.Domain.Entities.Invoice", b =>
+                {
+                    b.HasOne("DominioDeLaSierra.Domain.Entities.Order", null)
+                        .WithMany()
+                        .HasForeignKey("OrderId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("DominioDeLaSierra.Domain.Entities.InvoiceLine", b =>
+                {
+                    b.HasOne("DominioDeLaSierra.Domain.Entities.Invoice", "Invoice")
+                        .WithMany("Lines")
+                        .HasForeignKey("InvoiceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Invoice");
+                });
+
             modelBuilder.Entity("DominioDeLaSierra.Domain.Entities.OrderItem", b =>
                 {
                     b.HasOne("DominioDeLaSierra.Domain.Entities.Order", "Order")
@@ -1044,6 +1307,11 @@ namespace DominioDeLaSierra.Infrastructure.Persistence.Migrations
                     b.Navigation("Children");
 
                     b.Navigation("Products");
+                });
+
+            modelBuilder.Entity("DominioDeLaSierra.Domain.Entities.Invoice", b =>
+                {
+                    b.Navigation("Lines");
                 });
 
             modelBuilder.Entity("DominioDeLaSierra.Domain.Entities.Order", b =>

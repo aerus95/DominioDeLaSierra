@@ -15,6 +15,7 @@
     label { display: block; font-size: 12px; font-weight: 600; margin: 0 0 4px; }
     input, select { width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; font: inherit; background: var(--cream); }
     button, .clear-link { background: var(--wine); color: #fff; border: 0; border-radius: 999px; padding: 10px 18px; font: 600 14px inherit; cursor: pointer; text-decoration: none; }
+    .billing button:disabled { opacity: .45; cursor: not-allowed; }
     .clear-link { background: transparent; color: var(--wine); border: 1px solid var(--wine); }
     table { width: 100%; border-collapse: collapse; font-size: 13px; }
     th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
@@ -39,16 +40,20 @@
     .pager a, .pager span { padding: 6px 10px; border-radius: 999px; text-decoration: none; font-size: 13px; }
     .pager a { color: var(--wine); border: 1px solid var(--line); }
     .pager .current { background: var(--wine); color: #fff; }
-    .table-scroll { overflow-x: auto; }
-    .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px 18px; margin: 0; }
+    .table-scroll { display: block; width: 100%; max-width: 100%; overflow-x: auto; }
+    .order-identity { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+    a.order-link { white-space: nowrap; }
+    .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr)); gap: 12px 18px; margin: 0; }
+    .facts > div { min-width: 0; }
     .facts dt { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: #6d6560; }
-    .facts dd { margin: 2px 0 0; }
+    .facts dd { margin: 2px 0 0; overflow-wrap: anywhere; }
+    a.detail-link { display: inline-block; background: transparent; color: var(--wine); border: 1px solid var(--wine); border-radius: 999px; padding: 6px 12px; font: 600 12px inherit; white-space: nowrap; text-decoration: none; }
     .components { margin: 6px 0 0; padding-left: 16px; color: #756c65; }
     .ship-form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: end; }
     .ship-form .full { grid-column: 1 / -1; }
     .back { color: var(--wine); text-decoration: none; font-size: 13px; }
     @@media (max-width: 720px) {
         header.page, .wrap { padding-left: 16px; padding-right: 16px; }
-        .ship-form { grid-template-columns: 1fr; }
+        .ship-form, .payment-facts { grid-template-columns: 1fr; }
     }
 </style>

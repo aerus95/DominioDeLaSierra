@@ -23,7 +23,10 @@
                 @foreach (var order in Model.Results.Items)
                 {
                     <tr>
-                        <td><a class="order-link" href="/admin/orders/@order.Id">@order.Number</a></td>
+                        <td class="order-identity">
+                            <a class="order-link" href="/admin/orders/@order.Id">@order.Number</a>
+                            <a class="detail-link" href="/admin/orders/@order.Id">Ver detalle</a>
+                        </td>
                         <td>@OrderPresentation.When(order.CreatedAt)</td>
                         <td>@order.CustomerName</td>
                         <td>@OrderPresentation.Money(order.TotalCents)</td>

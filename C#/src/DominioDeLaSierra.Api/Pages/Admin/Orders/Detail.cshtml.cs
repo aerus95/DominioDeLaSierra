@@ -2,6 +2,7 @@ using System.Security.Claims;
 using DominioDeLaSierra.Api.Security;
 using DominioDeLaSierra.Application.Admin;
 using DominioDeLaSierra.Application.Checkout;
+using DominioDeLaSierra.Application.Invoicing;
 using DominioDeLaSierra.Application.Inventory;
 using DominioDeLaSierra.Domain;
 using Microsoft.AspNetCore.Authorization;
@@ -13,10 +14,13 @@ namespace DominioDeLaSierra.Api.Pages.Admin.Orders;
 [Authorize(Policy = AdminAuthOptions.PanelPolicy)]
 public sealed class DetailModel(
     IAdminOrders orders,
+    IInvoiceIssuance invoices,
     IOrderPaymentReconciliation reconciliation,
     IOrderHoldRelease holdRelease) : PageModel
 {
     public AdminOrderDetail? Order { get; private set; }
+
+    public InvoicePanel? Billing { get; private set; }
 
     [TempData]
     public string? StatusMessage { get; set; }
@@ -36,6 +40,41 @@ public sealed class DetailModel(
         if (Order is null)
         {
             Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
+        if (CanWrite)
+        {
+            Billing = await invoices.DescribeAsync(id, cancellationToken);
+        }
+    }
+
+    public async Task<IActionResult> OnPostDownloadInvoiceAsync(Guid id, CancellationToken cancellationToken)
+    {
+        if (!CanWrite)
+        {
+            return new ContentResult
+            {
+                StatusCode = StatusCodes.Status403Forbidden,
+                Content = "No tienes permiso para gestionar pedidos.",
+                ContentType = "text/plain; charset=utf-8"
+            };
+        }
+
+        if (await orders.GetAsync(id, cancellationToken) is null)
+        {
+            return NotFound();
+        }
+
+        try
+        {
+            var file = await invoices.DownloadAsync(id, cancellationToken);
+            return File(file.Content, "application/pdf", file.FileName);
+        }
+        catch (InvoiceIssuanceException exception)
+        {
+            ErrorMessage = exception.Message;
+            return RedirectToPage(new { id });
         }
     }
 

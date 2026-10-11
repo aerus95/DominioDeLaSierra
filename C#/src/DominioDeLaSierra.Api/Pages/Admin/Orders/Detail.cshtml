@@ -47,7 +47,6 @@
                     <div><dt>Fecha de creación</dt><dd>@OrderPresentation.When(order.CreatedAt)</dd></div>
                     <div><dt>Estado</dt><dd><span class="badge @OrderPresentation.StatusClass(order.Status)">@OrderPresentation.Status(order.Status)</span></dd></div>
                     <div><dt>Preparación</dt><dd><span class="badge @OrderPresentation.FulfillmentClass(order.FulfillmentStatus)">@OrderPresentation.Fulfillment(order.FulfillmentStatus)</span></dd></div>
-                    <div><dt>Caducidad de la reserva</dt><dd>@OrderPresentation.When(order.ReservationExpiresAt)</dd></div>
                 </dl>
             </section>
 
@@ -132,12 +131,10 @@
                 {
                     @foreach (var payment in order.Payments)
                     {
-                        <dl class="facts">
+                        <dl class="facts payment-facts">
                             <div><dt>Estado del pago</dt><dd>@OrderPresentation.Payment(payment.Status)</dd></div>
                             <div><dt>Importe</dt><dd>@OrderPresentation.Money(payment.AmountCents)</dd></div>
                             <div><dt>Moneda</dt><dd>@payment.Currency</dd></div>
-                            <div><dt>Sesión</dt><dd>@(payment.CheckoutSessionId ?? "Sin sesión")</dd></div>
-                            <div><dt>Intento</dt><dd>@(payment.PaymentIntentId ?? "Sin intento")</dd></div>
                             <div><dt>Creado</dt><dd>@OrderPresentation.When(payment.CreatedAt)</dd></div>
                             @if (payment.SucceededAt is { } succeededAt)
                             {
@@ -149,58 +146,6 @@
                             <p class="flash err">@incident.EventType: @incident.AttentionReason</p>
                         }
                     }
-                }
-            </section>
-
-            <section class="card">
-                <h2>Reserva de stock</h2>
-                @if (order.Reservation is null)
-                {
-                    <p class="muted">Este pedido no tiene una reserva de stock.</p>
-                }
-                else
-                {
-                    <dl class="facts">
-                        <div><dt>Estado</dt><dd>@OrderPresentation.Reservation(order.Reservation.Status)</dd></div>
-                        <div><dt>Reservada</dt><dd>@OrderPresentation.When(order.Reservation.ReservedAt)</dd></div>
-                        @if (order.Reservation.ConfirmationStartedAt is { } started)
-                        {
-                            <div><dt>Confirmación iniciada</dt><dd>@OrderPresentation.When(started)</dd></div>
-                        }
-                        @if (order.Reservation.ConfirmedAt is { } confirmed)
-                        {
-                            <div><dt>Confirmada</dt><dd>@OrderPresentation.When(confirmed)</dd></div>
-                        }
-                        @if (order.Reservation.ReleasedAt is { } released)
-                        {
-                            <div><dt>Liberada</dt><dd>@OrderPresentation.When(released)</dd></div>
-                        }
-                    </dl>
-                }
-                @if (Model.CanReconcile
-                    && order.Status == DominioDeLaSierra.Domain.OrderStatus.PendingPayment
-                    && order.Reservation?.Status is DominioDeLaSierra.Domain.StockReservationStatus.Reserved
-                        or DominioDeLaSierra.Domain.StockReservationStatus.Confirming)
-                {
-                    <form class="ship-form" method="post" asp-page-handler="Reconcile">
-                        <input type="hidden" name="orderNumber" value="@order.Number">
-                        <div class="full">
-                            <button type="submit">Reconciliar este cobro</button>
-                        </div>
-                    </form>
-                    <p class="muted">Comprueba en Stripe la sesión guardada de este pedido. Si el cobro está pagado, lo confirma sin volver a descontar el stock.</p>
-                }
-                @if (Model.CanReconcile
-                    && order.Status == DominioDeLaSierra.Domain.OrderStatus.PendingPayment
-                    && order.Reservation?.Status == DominioDeLaSierra.Domain.StockReservationStatus.Reserved)
-                {
-                    <form class="ship-form" method="post" asp-page-handler="ReleaseHold">
-                        <input type="hidden" name="orderNumber" value="@order.Number">
-                        <div class="full">
-                            <button type="submit">Liberar reserva caducada</button>
-                        </div>
-                    </form>
-                    <p class="muted">Si Stripe muestra la sesión impagada y caducada, devuelve la unidad reservada y caduca este pedido.</p>
                 }
             </section>
 
@@ -273,6 +218,47 @@
                     </div>
                 }
             </section>
+
+            @if (Model.CanWrite && Model.Billing is not null)
+            {
+                var billing = Model.Billing;
+                <section class="card billing">
+                    <h2>Facturación</h2>
+                    @if (billing.Issued)
+                    {
+                        <dl class="facts">
+                            <div><dt>Número</dt><dd>@billing.FullNumber</dd></div>
+                            <div><dt>Fecha de emisión</dt><dd>@OrderPresentation.When(billing.IssuedAt!.Value)</dd></div>
+                        </dl>
+                        @if (billing.Fictional)
+                        {
+                            <p class="muted">Documento ficticio de pruebas. No es una factura fiscal.</p>
+                        }
+                        <form method="post" asp-page-handler="DownloadInvoice" asp-route-id="@order.Id">
+                            @Html.AntiForgeryToken()
+                            <button type="submit">@billing.ActionLabel</button>
+                        </form>
+                    }
+                    else if (billing.CanIssue)
+                    {
+                        <form method="post" asp-page-handler="DownloadInvoice" asp-route-id="@order.Id">
+                            @Html.AntiForgeryToken()
+                            <button type="submit">@billing.ActionLabel</button>
+                        </form>
+                    }
+                    else
+                    {
+                        @if (!string.IsNullOrWhiteSpace(billing.Notice))
+                        {
+                            <p class="muted">@billing.Notice</p>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(billing.ActionLabel))
+                        {
+                            <button type="button" disabled>@billing.ActionLabel</button>
+                        }
+                    }
+                </section>
+            }
         }
     </div>
 </body>

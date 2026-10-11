@@ -3,6 +3,7 @@ using DominioDeLaSierra.Api.Checkout;
 using DominioDeLaSierra.Api.Errors;
 using DominioDeLaSierra.Api.Security;
 using DominioDeLaSierra.Application.Checkout;
+using DominioDeLaSierra.Application.Invoicing;
 using DominioDeLaSierra.Domain;
 using DominioDeLaSierra.Infrastructure;
 using DominioDeLaSierra.Infrastructure.Persistence;
@@ -93,6 +94,9 @@ builder.Services.AddSwaggerGen();
 DatabaseGuard.EnsureProcess(
     builder.Environment.EnvironmentName,
     PostgresConnection.Build(builder.Configuration));
+InvoiceIssuanceGuard.Ensure(
+    builder.Environment.EnvironmentName,
+    builder.Configuration.GetSection(InvoiceOptions.SectionName).Get<InvoiceOptions>() ?? new InvoiceOptions());
 OrderNotificationDeliveryGuard.Ensure(
     builder.Environment.EnvironmentName,
     builder.Configuration.GetSection(OrderNotificationOptions.SectionName).Get<OrderNotificationOptions>()

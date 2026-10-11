@@ -21,6 +21,9 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<StockReservation> StockReservations => Set<StockReservation>();
     public DbSet<FulfillmentTransition> FulfillmentTransitions => Set<FulfillmentTransition>();
     public DbSet<OrderNotification> OrderNotifications => Set<OrderNotification>();
+    public DbSet<Invoice> Invoices => Set<Invoice>();
+    public DbSet<InvoiceLine> InvoiceLines => Set<InvoiceLine>();
+    public DbSet<InvoiceSeries> InvoiceSeries => Set<InvoiceSeries>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

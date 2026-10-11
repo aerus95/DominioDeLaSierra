@@ -32,6 +32,21 @@ public sealed class StripeWebhookTests(PostgresFixture fixture) : DatabaseTest(f
     }
 
     [Fact]
+    public async Task Confirms_payment_and_records_a_single_paid_notification()
+    {
+        var ready = await ReadyOrderAsync("wh-notice");
+        var signed = Paid(ready, "evt_test_notice");
+        var first = await PostAsync(ready.Client, signed);
+        var second = await PostAsync(ready.Client, signed);
+
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, second.StatusCode);
+        await AssertPaidOnceAsync(ready.OrderId, ready.SessionId, stock: 4);
+        Assert.Equal(1, await EventCountAsync(ready.OrderId));
+        Assert.Equal(1, await NotificationCountAsync(ready.OrderId));
+    }
+
+    [Fact]
     public async Task Rejects_a_bad_signature_and_a_changed_payload()
     {
         var ready = await ReadyOrderAsync("wh-sign");
@@ -273,6 +288,16 @@ public sealed class StripeWebhookTests(PostgresFixture fixture) : DatabaseTest(f
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var paymentIds = db.Payments.Where(item => item.OrderId == orderId).Select(item => item.Id);
         return await db.PaymentEvents.CountAsync(item => paymentIds.Contains(item.PaymentId));
+    }
+
+    private async Task<int> NotificationCountAsync(Guid orderId)
+    {
+        await using var scope = Fixture.Factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        return await db.OrderNotifications.CountAsync(item =>
+            item.OrderId == orderId
+            && item.Kind == OrderNotificationKind.PaidConfirmation
+            && item.Status == OrderNotificationStatus.Pending);
     }
 
     private async Task<string?> AttentionAsync(Guid orderId)

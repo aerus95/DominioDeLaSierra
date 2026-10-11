@@ -15,8 +15,10 @@ using DominioDeLaSierra.Infrastructure.Persistence;
 using DominioDeLaSierra.Infrastructure.Products;
 using DominioDeLaSierra.Application.Checkout;
 using DominioDeLaSierra.Application.Inventory;
+using DominioDeLaSierra.Application.Invoicing;
 using DominioDeLaSierra.Infrastructure.Checkout;
 using DominioDeLaSierra.Infrastructure.Inventory;
+using DominioDeLaSierra.Infrastructure.Invoicing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -67,6 +69,9 @@ public static class DependencyInjection
                 ? new MailpitOrderMailSender(notificationOptions)
                 : new DisabledOrderMailSender();
         });
+        services.Configure<InvoiceOptions>(configuration.GetSection(InvoiceOptions.SectionName));
+        services.AddScoped<IInvoiceIssuance, InvoiceIssuanceService>();
+        services.AddSingleton<InvoiceIssuanceFailureProbe>();
         services.AddSingleton<StripeWebhookFailureProbe>();
         services.AddSingleton<ReservationSweepFailureProbe>();
         if (string.Equals(configuration["Stripe:Gateway"], "Stub", StringComparison.OrdinalIgnoreCase))

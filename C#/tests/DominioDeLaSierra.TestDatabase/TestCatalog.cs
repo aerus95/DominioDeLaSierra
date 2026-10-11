@@ -36,6 +36,9 @@ public static class TestCatalog
         await db.Database.ExecuteSqlRawAsync(
             """
             TRUNCATE TABLE
+                "InvoiceLines",
+                "Invoices",
+                "InvoiceSeries",
                 "StockReservations",
                 "PaymentEvents",
                 "Payments",
@@ -176,6 +179,44 @@ public static class TestCatalog
 
     private static async Task<string> RunDockerAsync(string command, params string[] arguments)
     {
+        string? lastError = null;
+        foreach (var container in PostgresContainers())
+        {
+            var (exitCode, output, error) = await ExecDockerAsync(container, command, arguments);
+            if (exitCode == 0)
+            {
+                return output;
+            }
+
+            lastError = error;
+            if (!error.Contains("No such container", StringComparison.Ordinal))
+            {
+                break;
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"No se ha podido preparar la base de pruebas. {lastError}");
+    }
+
+    private static IEnumerable<string> PostgresContainers()
+    {
+        var configured = Environment.GetEnvironmentVariable("DOMINIO_POSTGRES_CONTAINER");
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            yield return configured.Trim();
+            yield break;
+        }
+
+        yield return "dominio-sierra-postgres-local";
+        yield return "dominio-sierra-postgres";
+    }
+
+    private static async Task<(int ExitCode, string Output, string Error)> ExecDockerAsync(
+        string container,
+        string command,
+        string[] arguments)
+    {
         var start = new System.Diagnostics.ProcessStartInfo
         {
             FileName = "docker",
@@ -184,7 +225,7 @@ public static class TestCatalog
             UseShellExecute = false
         };
         start.ArgumentList.Add("exec");
-        start.ArgumentList.Add("dominio-sierra-postgres-local");
+        start.ArgumentList.Add(container);
         start.ArgumentList.Add(command);
         foreach (var argument in arguments)
         {
@@ -196,13 +237,7 @@ public static class TestCatalog
         var output = await process.StandardOutput.ReadToEndAsync();
         var error = await process.StandardError.ReadToEndAsync();
         await process.WaitForExitAsync();
-        if (process.ExitCode != 0)
-        {
-            throw new InvalidOperationException(
-                $"No se ha podido preparar la base de pruebas (docker exit {process.ExitCode}). {error}");
-        }
-
-        return output;
+        return (process.ExitCode, output, error);
     }
 
     private static string FindRepoRoot()

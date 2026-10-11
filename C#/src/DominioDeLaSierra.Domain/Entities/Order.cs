@@ -23,6 +23,7 @@ public sealed class Order
     public string CustomerName { get; private set; } = null!;
     public string Email { get; private set; } = null!;
     public string Phone { get; private set; } = null!;
+    public string? CustomerTaxId { get; private set; }
     public string AddressLine { get; private set; } = null!;
     public string PostalCode { get; private set; } = null!;
     public string City { get; private set; } = null!;
@@ -180,6 +181,16 @@ public sealed class Order
         ShippingVatRate = vatRate;
         ShippingTaxableBaseCents = taxableBase;
         ShippingVatCents = vat;
+    }
+
+    public void AssignCustomerTaxId(string taxId)
+    {
+        if (CustomerTaxId is not null)
+        {
+            throw new InvalidOperationException("El NIF del comprador ya está asignado.");
+        }
+
+        CustomerTaxId = FiscalIdentity.RequireTaxId(taxId);
     }
 
     public Payment AddPayment(Guid paymentId, DateTimeOffset createdAt)
