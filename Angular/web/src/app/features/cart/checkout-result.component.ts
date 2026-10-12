@@ -2,10 +2,13 @@ import { Component, DestroyRef, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { EMPTY, catchError, expand, map, of, switchMap, timer } from 'rxjs';
+import { environment } from '../../../environments/environment';
 import {
   CHECKOUT_SUCCESS_MESSAGE,
+  CHECKOUT_UNAVAILABLE_MESSAGE,
   CHECKOUT_UNKNOWN_MESSAGE,
   CheckoutOutcome,
+  checkoutIsOpen,
   CheckoutOutcomeView,
   checkoutAmount,
   checkoutOutcomeCopy,
@@ -64,6 +67,27 @@ export class CheckoutResultComponent {
   readonly amount = signal<string | null>(null);
 
   constructor() {
+    if (environment.checkoutGate === 'closed') {
+      this.showUnavailable();
+      return;
+    }
+
+    this.checkout.availability().pipe(takeUntilDestroyed(this.destroyRef)).subscribe((allowed) => {
+      if (!checkoutIsOpen(environment.checkoutGate, allowed)) {
+        this.showUnavailable();
+        return;
+      }
+      this.followPayment();
+    });
+  }
+
+  private showUnavailable(): void {
+    this.view.set('unknown');
+    this.heading.set(CHECKOUT_UNAVAILABLE_MESSAGE);
+    this.detail.set(CHECKOUT_UNAVAILABLE_MESSAGE);
+  }
+
+  private followPayment(): void {
     const current = readCurrentCheckout(this.storage());
     if (!current) {
       this.show('unknown', null, false);

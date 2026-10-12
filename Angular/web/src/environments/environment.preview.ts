@@ -1,5 +1,6 @@
 export const environment = {
   production: false,
   mockCatalog: true,
-  apiBaseUrl: ''
+  apiBaseUrl: '',
+  checkoutGate: 'closed' as 'closed' | 'server'
 };

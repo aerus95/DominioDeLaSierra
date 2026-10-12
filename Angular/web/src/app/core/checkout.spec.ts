@@ -2,6 +2,10 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
   CHECKOUT_SUCCESS_MESSAGE,
+  CHECKOUT_UNAVAILABLE_MESSAGE,
+  checkoutAllowedByServer,
+  checkoutUsesPanelCookie,
+  checkoutIsOpen,
   FREE_SHIPPING_EUROS,
   HOLD_RELEASED_MESSAGE,
   checkoutErrorMessage,
@@ -41,6 +45,21 @@ const customer = {
   province: 'Salamanca',
   notes: ''
 };
+
+describe('disponibilidad del checkout', () => {
+  it('solo abre la compra cuando el servidor autoriza la sesión', () => {
+    assert.equal(checkoutIsOpen('closed', true), false);
+    assert.equal(checkoutIsOpen('server', false), false);
+    assert.equal(checkoutIsOpen('server', true), true);
+    assert.equal(checkoutAllowedByServer({ allowed: true }), true);
+    assert.equal(checkoutAllowedByServer({ allowed: 'true' }), false);
+    assert.equal(checkoutAllowedByServer({ enabled: true }), false);
+    assert.equal(checkoutAllowedByServer(null), false);
+    assert.equal(CHECKOUT_UNAVAILABLE_MESSAGE, 'La compra online estará disponible próximamente');
+    assert.equal(checkoutUsesPanelCookie(''), true);
+    assert.equal(checkoutUsesPanelCookie('http://localhost:5141'), false);
+  });
+});
 
 describe('presupuesto del checkout', () => {
   it('pide al servidor solo identificadores, cantidades y destino', () => {

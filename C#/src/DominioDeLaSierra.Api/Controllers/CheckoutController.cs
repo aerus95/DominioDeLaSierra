@@ -1,18 +1,30 @@
+using DominioDeLaSierra.Api.Checkout;
 using DominioDeLaSierra.Application.Checkout;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.Configuration;
 
 namespace DominioDeLaSierra.Api.Controllers;
 
 [ApiController]
+[RequireCheckoutAccess]
 [EnableRateLimiting("checkout")]
 [RequestSizeLimit(16 * 1024)]
 [Route("api/v1/checkout")]
 public sealed class CheckoutController(
     ICheckout checkout,
     IOrderPaymentSessions sessions,
-    ICheckoutOutcome outcomes) : ControllerBase
+    ICheckoutOutcome outcomes,
+    IConfiguration configuration) : ControllerBase
 {
+    [HttpGet("availability")]
+    [CheckoutProbe]
+    public ActionResult<CheckoutAvailabilityDto> Availability()
+    {
+        return Ok(new CheckoutAvailabilityDto(
+            CheckoutAccessRules.Allows(configuration["Checkout:Access"], RequireCheckoutAccessAttribute.IsTester(User))));
+    }
+
     [HttpPost("quotes")]
     public async Task<ActionResult<CheckoutQuoteDto>> Quote(
         [FromBody] CheckoutQuoteRequest? request,

@@ -7,6 +7,7 @@ import { ShopComponent } from './features/catalog/shop.component';
 import { ProductDetailComponent } from './features/catalog/product-detail.component';
 import { CartComponent } from './features/cart/cart.component';
 import { CheckoutResultComponent } from './features/cart/checkout-result.component';
+import { checkoutAccessGuard } from './core/checkout.guard';
 import { VisitsComponent } from './features/visits/visits.component';
 import { AdminDashboardComponent } from './features/admin/admin-dashboard.component';
 
@@ -18,8 +19,8 @@ export const appRoutes: Routes = [
   { path: 'historia', component: StoryComponent, title: 'Nuestra historia · Dominio de la Sierra' },
   { path: 'contacto', component: ContactComponent, title: 'Contacto · Dominio de la Sierra' },
   { path: 'carrito', component: CartComponent, title: 'Tu carrito · Dominio de la Sierra' },
-  { path: 'checkout/exito', component: CheckoutResultComponent, title: 'Pago · Dominio de la Sierra' },
-  { path: 'checkout/cancelado', component: CheckoutResultComponent, title: 'Pago · Dominio de la Sierra' },
+  { path: 'checkout/exito', component: CheckoutResultComponent, canActivate: [checkoutAccessGuard], title: 'Pago · Dominio de la Sierra' },
+  { path: 'checkout/cancelado', component: CheckoutResultComponent, canActivate: [checkoutAccessGuard], title: 'Pago · Dominio de la Sierra' },
   { path: 'gestion', component: AdminDashboardComponent, title: 'Gestión · Dominio de la Sierra' },
   { path: 'gestion/:section', component: AdminDashboardComponent, title: 'Gestión · Dominio de la Sierra' },
   { path: 'aviso-legal', component: LegalComponent, data: { legalKey: 'aviso-legal' }, title: 'Información · Dominio de la Sierra' },

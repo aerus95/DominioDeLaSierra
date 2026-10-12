@@ -97,6 +97,9 @@ DatabaseGuard.EnsureProcess(
 InvoiceIssuanceGuard.Ensure(
     builder.Environment.EnvironmentName,
     builder.Configuration.GetSection(InvoiceOptions.SectionName).Get<InvoiceOptions>() ?? new InvoiceOptions());
+CheckoutAccessRules.Ensure(
+    builder.Environment.EnvironmentName,
+    builder.Configuration["Checkout:Access"]);
 OrderNotificationDeliveryGuard.Ensure(
     builder.Environment.EnvironmentName,
     builder.Configuration.GetSection(OrderNotificationOptions.SectionName).Get<OrderNotificationOptions>()

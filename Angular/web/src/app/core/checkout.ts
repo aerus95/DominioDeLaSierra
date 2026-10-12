@@ -82,6 +82,24 @@ export const CHECKOUT_UNKNOWN_MESSAGE = 'No podemos consultar el estado del pago
 export const CHECKOUT_OUTCOME_ATTEMPTS = 8;
 export const CHECKOUT_OUTCOME_DELAYS_MS = [2000, 3000, 5000, 8000, 8000, 8000, 8000] as const;
 export const HOLD_RELEASED_MESSAGE = 'No queda margen para un pago de 30 minutos. La reserva se ha liberado.';
+export const CHECKOUT_UNAVAILABLE_MESSAGE = 'La compra online estará disponible próximamente';
+
+export type CheckoutGate = 'closed' | 'server';
+
+export function checkoutIsOpen(gate: CheckoutGate, serverAllowed: boolean): boolean {
+  return gate === 'server' && serverAllowed === true;
+}
+
+export function checkoutUsesPanelCookie(apiBaseUrl: string): boolean {
+  return apiBaseUrl.trim() === '';
+}
+
+export function checkoutAllowedByServer(body: unknown): boolean {
+  return !!body
+    && typeof body === 'object'
+    && 'allowed' in body
+    && (body as { allowed?: unknown }).allowed === true;
+}
 
 export function eurosFromCents(cents: number): number {
   return cents / 100;

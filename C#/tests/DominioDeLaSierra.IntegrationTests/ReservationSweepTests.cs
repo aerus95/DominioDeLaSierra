@@ -35,6 +35,36 @@ public sealed class ReservationSweepTests(PostgresFixture fixture) : DatabaseTes
     }
 
     [Fact]
+    public async Task Releases_stock_after_stripe_fails_before_creating_a_session()
+    {
+        var held = await FailPaymentBeforeSessionAsync("sweep-failed-session");
+        await AgeAsync(held.OrderId, TimeSpan.FromMinutes(5));
+
+        var result = await SweepAsync();
+
+        Assert.Equal(1, result.Released);
+        Assert.Equal(0, result.Failed);
+        await AssertReleasedAsync(held.OrderId, held.ProductId);
+        Assert.Equal(1, await CancellationsAsync(held.ProductId));
+    }
+
+    [Fact]
+    public async Task Keeps_stock_without_a_session_when_stripe_does_not_answer()
+    {
+        var ready = await PlaceWithoutSessionAsync("sweep-none-down");
+        await AgeAsync(ready.OrderId, TimeSpan.FromMinutes(5));
+        Stub().SetInspection(ready.OrderId, StripeSessionInspection.Unavailable());
+
+        var result = await SweepAsync();
+
+        Assert.Equal(1, result.Failed);
+        Assert.Equal(0, result.Released);
+        Assert.Equal(OrderStatus.PendingPayment, await StatusAsync(ready.OrderId));
+        Assert.Equal(StockReservationStatus.Reserved, await ReservationAsync(ready.OrderId));
+        Assert.Equal(4, await StockAsync(ready.ProductId));
+    }
+
+    [Fact]
     public async Task Releases_an_expired_hold_when_stripe_says_the_session_expired()
     {
         var ready = await PayAsync("sweep-expired");
@@ -297,6 +327,31 @@ public sealed class ReservationSweepTests(PostgresFixture fixture) : DatabaseTes
         var order = JsonSerializer.Deserialize<GuestOrderDto>(await response.Content.ReadAsStringAsync(), JsonOptions())!;
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return new ReadyOrder(client, order.OrderId, wine.Id, "", order.TotalCents);
+    }
+
+    private async Task<ReadyOrder> FailPaymentBeforeSessionAsync(string key)
+    {
+        var stub = Stub();
+        stub.Failure = new StripeCheckoutException("detalle interno");
+        var harness = new CatalogHarness(Fixture.Factory.Services);
+        var categoryId = await harness.CreateCategoryAsync();
+        var wine = await harness.CreateProductAsync(categoryId, key, ProductKind.Wine, initialStock: 5, vintage: "2024");
+        var client = Fixture.Factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/checkout/payments")
+        {
+            Content = JsonContent.Create(Body(wine.Id))
+        };
+        request.Headers.TryAddWithoutValidation("Idempotency-Key", key + "-" + Guid.NewGuid().ToString("N"));
+        var response = await client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
+        stub.Failure = null;
+        await using var scope = Fixture.Factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var order = await db.Orders.Include(item => item.Payments).SingleAsync();
+        Assert.Equal(PaymentStatus.Failed, Assert.Single(order.Payments).Status);
+        Assert.Null(order.Payments.Single().StripeCheckoutSessionId);
+        Assert.Equal(4, await StockAsync(wine.Id));
+        return new ReadyOrder(client, order.Id, wine.Id, "", order.TotalCents);
     }
 
     private static PlaceGuestOrderRequest Body(Guid productId)
