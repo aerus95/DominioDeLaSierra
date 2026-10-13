@@ -18,14 +18,42 @@ public sealed class InvoiceConfiguration : IEntityTypeConfiguration<Invoice>
                 AND "ProductTaxableBaseCents" >= 0
                 AND "ProductVatCents" >= 0
                 AND "ShippingCents" >= 0
-                AND "ShippingTaxableBaseCents" >= 0
-                AND "ShippingVatCents" >= 0
                 AND "TotalCents" >= 0
                 AND "ProductTaxableBaseCents" + "ProductVatCents" = "ProductSubtotalCents"
-                AND "ShippingTaxableBaseCents" + "ShippingVatCents" = "ShippingCents"
                 AND "TotalCents" = "ProductSubtotalCents" + "ShippingCents"
-                AND "ShippingVatRate" >= 0
-                AND "ShippingVatRate" <= 999.99
+                AND (
+                    (
+                        "Fictional" = TRUE
+                        AND "ShippingVatRate" IS NULL
+                        AND "ShippingTaxableBaseCents" IS NULL
+                        AND "ShippingVatCents" IS NULL
+                    )
+                    OR (
+                        "ShippingVatRate" IS NOT NULL
+                        AND "ShippingTaxableBaseCents" IS NOT NULL
+                        AND "ShippingVatCents" IS NOT NULL
+                        AND "ShippingTaxableBaseCents" >= 0
+                        AND "ShippingVatCents" >= 0
+                        AND "ShippingTaxableBaseCents" + "ShippingVatCents" = "ShippingCents"
+                        AND "ShippingVatRate" >= 0
+                        AND "ShippingVatRate" <= 999.99
+                    )
+                )
+                """);
+            table.HasCheckConstraint(
+                "CK_Invoices_DocumentKind",
+                """
+                (
+                    "Fictional" = TRUE
+                    AND "FiscalForm" = 'NotApplicable'
+                    AND "SellerTaxId" = 'FICTICIO-TEST'
+                )
+                OR (
+                    "Fictional" = FALSE
+                    AND "FiscalForm" IN ('Complete', 'Simplified')
+                    AND "BuyerTaxId" IS NOT NULL
+                    AND "ShippingVatRate" IS NOT NULL
+                )
                 """);
             table.HasCheckConstraint("CK_Invoices_Currency", "\"Currency\" = 'EUR'");
             table.HasCheckConstraint(
@@ -85,6 +113,12 @@ public sealed class InvoiceConfiguration : IEntityTypeConfiguration<Invoice>
             .HasColumnType("boolean")
             .IsRequired();
 
+        builder.Property(invoice => invoice.FiscalForm)
+            .HasConversion<string>()
+            .HasColumnType("character varying(20)")
+            .HasMaxLength(20)
+            .IsRequired();
+
         MapParty(builder, invoice => invoice.SellerLegalName, FiscalIdentity.LegalNameMaxLength, "SellerLegalName");
         MapParty(builder, invoice => invoice.SellerTaxId, FiscalIdentity.TaxIdMaxLength, "SellerTaxId");
         MapParty(builder, invoice => invoice.SellerAddressLine, FiscalIdentity.AddressLineMaxLength, "SellerAddressLine");
@@ -93,7 +127,11 @@ public sealed class InvoiceConfiguration : IEntityTypeConfiguration<Invoice>
         MapParty(builder, invoice => invoice.SellerProvince, FiscalIdentity.ProvinceMaxLength, "SellerProvince");
         MapParty(builder, invoice => invoice.SellerCountryCode, 2, "SellerCountryCode");
         MapParty(builder, invoice => invoice.BuyerName, FiscalIdentity.LegalNameMaxLength, "BuyerName");
-        MapParty(builder, invoice => invoice.BuyerTaxId, FiscalIdentity.TaxIdMaxLength, "BuyerTaxId");
+        builder.Property(invoice => invoice.BuyerTaxId)
+            .HasColumnName("BuyerTaxId")
+            .HasColumnType($"character varying({FiscalIdentity.TaxIdMaxLength})")
+            .HasMaxLength(FiscalIdentity.TaxIdMaxLength)
+            .IsRequired(false);
         MapParty(builder, invoice => invoice.BuyerAddressLine, FiscalIdentity.AddressLineMaxLength, "BuyerAddressLine");
         MapParty(builder, invoice => invoice.BuyerPostalCode, FiscalIdentity.PostalCodeMaxLength, "BuyerPostalCode");
         MapParty(builder, invoice => invoice.BuyerCity, FiscalIdentity.CityMaxLength, "BuyerCity");
@@ -104,9 +142,9 @@ public sealed class InvoiceConfiguration : IEntityTypeConfiguration<Invoice>
         builder.Property(invoice => invoice.ProductTaxableBaseCents).HasColumnType("bigint").IsRequired();
         builder.Property(invoice => invoice.ProductVatCents).HasColumnType("bigint").IsRequired();
         builder.Property(invoice => invoice.ShippingCents).HasColumnType("bigint").IsRequired();
-        builder.Property(invoice => invoice.ShippingVatRate).HasColumnType("numeric(5,2)").IsRequired();
-        builder.Property(invoice => invoice.ShippingTaxableBaseCents).HasColumnType("bigint").IsRequired();
-        builder.Property(invoice => invoice.ShippingVatCents).HasColumnType("bigint").IsRequired();
+        builder.Property(invoice => invoice.ShippingVatRate).HasColumnType("numeric(5,2)").IsRequired(false);
+        builder.Property(invoice => invoice.ShippingTaxableBaseCents).HasColumnType("bigint").IsRequired(false);
+        builder.Property(invoice => invoice.ShippingVatCents).HasColumnType("bigint").IsRequired(false);
         builder.Property(invoice => invoice.TotalCents).HasColumnType("bigint").IsRequired();
 
         builder.Property(invoice => invoice.Currency)

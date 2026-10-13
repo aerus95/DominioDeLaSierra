@@ -95,8 +95,10 @@ DatabaseGuard.EnsureProcess(
     builder.Environment.EnvironmentName,
     PostgresConnection.Build(builder.Configuration));
 InvoiceIssuanceGuard.Ensure(
-    builder.Environment.EnvironmentName,
-    builder.Configuration.GetSection(InvoiceOptions.SectionName).Get<InvoiceOptions>() ?? new InvoiceOptions());
+    builder.Configuration.GetSection(InvoiceOptions.SectionName).Get<InvoiceOptions>() ?? new InvoiceOptions(),
+    InvoiceStripeMode.IsTest(
+        builder.Configuration["Stripe:Gateway"],
+        builder.Configuration["Stripe:SecretKey"] ?? builder.Configuration["STRIPE_SECRET_KEY"]));
 CheckoutAccessRules.Ensure(
     builder.Environment.EnvironmentName,
     builder.Configuration["Checkout:Access"]);

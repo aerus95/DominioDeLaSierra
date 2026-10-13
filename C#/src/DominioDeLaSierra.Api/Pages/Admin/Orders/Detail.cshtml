@@ -241,6 +241,10 @@
                     }
                     else if (billing.CanIssue)
                     {
+                        @if (!string.IsNullOrWhiteSpace(billing.Notice))
+                        {
+                            <p class="muted">@billing.Notice</p>
+                        }
                         <form method="post" asp-page-handler="DownloadInvoice" asp-route-id="@order.Id">
                             @Html.AntiForgeryToken()
                             <button type="submit">@billing.ActionLabel</button>

@@ -183,7 +183,6 @@ namespace DominioDeLaSierra.Infrastructure.Persistence.Migrations
                         .HasColumnName("BuyerProvince");
 
                     b.Property<string>("BuyerTaxId")
-                        .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)")
                         .HasColumnName("BuyerTaxId");
@@ -195,6 +194,11 @@ namespace DominioDeLaSierra.Infrastructure.Persistence.Migrations
 
                     b.Property<bool>("Fictional")
                         .HasColumnType("boolean");
+
+                    b.Property<string>("FiscalForm")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
 
                     b.Property<string>("FullNumber")
                         .IsRequired()
@@ -274,13 +278,13 @@ namespace DominioDeLaSierra.Infrastructure.Persistence.Migrations
                     b.Property<long>("ShippingCents")
                         .HasColumnType("bigint");
 
-                    b.Property<long>("ShippingTaxableBaseCents")
+                    b.Property<long?>("ShippingTaxableBaseCents")
                         .HasColumnType("bigint");
 
-                    b.Property<long>("ShippingVatCents")
+                    b.Property<long?>("ShippingVatCents")
                         .HasColumnType("bigint");
 
-                    b.Property<decimal>("ShippingVatRate")
+                    b.Property<decimal?>("ShippingVatRate")
                         .HasColumnType("numeric(5,2)");
 
                     b.Property<long>("TotalCents")
@@ -302,11 +306,13 @@ namespace DominioDeLaSierra.Infrastructure.Persistence.Migrations
 
                     b.ToTable("Invoices", null, t =>
                         {
-                            t.HasCheckConstraint("CK_Invoices_Amounts", "\"ProductSubtotalCents\" >= 0\nAND \"ProductTaxableBaseCents\" >= 0\nAND \"ProductVatCents\" >= 0\nAND \"ShippingCents\" >= 0\nAND \"ShippingTaxableBaseCents\" >= 0\nAND \"ShippingVatCents\" >= 0\nAND \"TotalCents\" >= 0\nAND \"ProductTaxableBaseCents\" + \"ProductVatCents\" = \"ProductSubtotalCents\"\nAND \"ShippingTaxableBaseCents\" + \"ShippingVatCents\" = \"ShippingCents\"\nAND \"TotalCents\" = \"ProductSubtotalCents\" + \"ShippingCents\"\nAND \"ShippingVatRate\" >= 0\nAND \"ShippingVatRate\" <= 999.99");
+                            t.HasCheckConstraint("CK_Invoices_Amounts", "\"ProductSubtotalCents\" >= 0\r\nAND \"ProductTaxableBaseCents\" >= 0\r\nAND \"ProductVatCents\" >= 0\r\nAND \"ShippingCents\" >= 0\r\nAND \"TotalCents\" >= 0\r\nAND \"ProductTaxableBaseCents\" + \"ProductVatCents\" = \"ProductSubtotalCents\"\r\nAND \"TotalCents\" = \"ProductSubtotalCents\" + \"ShippingCents\"\r\nAND (\r\n    (\r\n        \"Fictional\" = TRUE\r\n        AND \"ShippingVatRate\" IS NULL\r\n        AND \"ShippingTaxableBaseCents\" IS NULL\r\n        AND \"ShippingVatCents\" IS NULL\r\n    )\r\n    OR (\r\n        \"ShippingVatRate\" IS NOT NULL\r\n        AND \"ShippingTaxableBaseCents\" IS NOT NULL\r\n        AND \"ShippingVatCents\" IS NOT NULL\r\n        AND \"ShippingTaxableBaseCents\" >= 0\r\n        AND \"ShippingVatCents\" >= 0\r\n        AND \"ShippingTaxableBaseCents\" + \"ShippingVatCents\" = \"ShippingCents\"\r\n        AND \"ShippingVatRate\" >= 0\r\n        AND \"ShippingVatRate\" <= 999.99\r\n    )\r\n)");
 
                             t.HasCheckConstraint("CK_Invoices_Currency", "\"Currency\" = 'EUR'");
 
-                            t.HasCheckConstraint("CK_Invoices_Number", "\"Number\" >= 1\nAND \"Number\" <= 999999");
+                            t.HasCheckConstraint("CK_Invoices_DocumentKind", "(\r\n    \"Fictional\" = TRUE\r\n    AND \"FiscalForm\" = 'NotApplicable'\r\n    AND \"SellerTaxId\" = 'FICTICIO-TEST'\r\n)\r\nOR (\r\n    \"Fictional\" = FALSE\r\n    AND \"FiscalForm\" IN ('Complete', 'Simplified')\r\n    AND \"BuyerTaxId\" IS NOT NULL\r\n    AND \"ShippingVatRate\" IS NOT NULL\r\n)");
+
+                            t.HasCheckConstraint("CK_Invoices_Number", "\"Number\" >= 1\r\nAND \"Number\" <= 999999");
                         });
                 });
 
@@ -358,7 +364,7 @@ namespace DominioDeLaSierra.Infrastructure.Persistence.Migrations
 
                     b.ToTable("InvoiceLines", null, t =>
                         {
-                            t.HasCheckConstraint("CK_InvoiceLines_Amounts", "\"Position\" > 0\nAND \"Quantity\" > 0\nAND \"Quantity\" <= 1000000\nAND \"UnitPriceCents\" >= 0\nAND \"LineTotalCents\" >= 0\nAND \"TaxableBaseCents\" >= 0\nAND \"VatCents\" >= 0\nAND \"LineTotalCents\" = \"UnitPriceCents\" * \"Quantity\"\nAND \"TaxableBaseCents\" + \"VatCents\" = \"LineTotalCents\"\nAND \"VatRate\" >= 0\nAND \"VatRate\" <= 999.99");
+                            t.HasCheckConstraint("CK_InvoiceLines_Amounts", "\"Position\" > 0\r\nAND \"Quantity\" > 0\r\nAND \"Quantity\" <= 1000000\r\nAND \"UnitPriceCents\" >= 0\r\nAND \"LineTotalCents\" >= 0\r\nAND \"TaxableBaseCents\" >= 0\r\nAND \"VatCents\" >= 0\r\nAND \"LineTotalCents\" = \"UnitPriceCents\" * \"Quantity\"\r\nAND \"TaxableBaseCents\" + \"VatCents\" = \"LineTotalCents\"\r\nAND \"VatRate\" >= 0\r\nAND \"VatRate\" <= 999.99");
                         });
                 });
 
@@ -375,7 +381,7 @@ namespace DominioDeLaSierra.Infrastructure.Persistence.Migrations
 
                     b.ToTable("InvoiceSeries", null, t =>
                         {
-                            t.HasCheckConstraint("CK_InvoiceSeries_Number", "\"NextNumber\" >= 1\nAND \"NextNumber\" <= 1000000");
+                            t.HasCheckConstraint("CK_InvoiceSeries_Number", "\"NextNumber\" >= 1\r\nAND \"NextNumber\" <= 1000000");
                         });
                 });
 

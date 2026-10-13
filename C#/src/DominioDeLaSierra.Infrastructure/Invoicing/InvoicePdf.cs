@@ -16,17 +16,34 @@ public static class InvoicePdf
     private static readonly XColor Cream = XColor.FromArgb(242, 237, 228);
     private static readonly XColor Muted = XColor.FromArgb(117, 108, 101);
 
+    private static int renderFailures;
+
     static InvoicePdf()
     {
-        if (OperatingSystem.IsWindows())
+        if (GlobalFontSettings.FontResolver is null)
         {
-            GlobalFontSettings.UseWindowsFontsUnderWindows = true;
+            GlobalFontSettings.FontResolver = new InvoiceFontResolver();
         }
+    }
+
+    public static void FailNextRender()
+    {
+        Interlocked.Exchange(ref renderFailures, 1);
+    }
+
+    public static void ResetRenderFailures()
+    {
+        Interlocked.Exchange(ref renderFailures, 0);
     }
 
     public static byte[] Render(Invoice invoice)
     {
-        var family = ResolveFamily();
+        if (Interlocked.Exchange(ref renderFailures, 0) > 0)
+        {
+            throw new InvalidOperationException("Fallo de prueba al generar el PDF.");
+        }
+
+        var family = InvoiceFontResolver.FamilyName;
         using var document = new PdfDocument();
         document.Info.Title = invoice.Fictional ? "Documento de prueba" : "Factura " + invoice.FullNumber;
         document.Info.Author = invoice.SellerLegalName;
@@ -126,7 +143,7 @@ public static class InvoicePdf
         var buyer = new[]
         {
             invoice.BuyerName,
-            invoice.BuyerTaxId,
+            invoice.BuyerTaxId ?? Invoice.MissingBuyerTaxIdLabel,
             invoice.BuyerAddressLine,
             $"{invoice.BuyerPostalCode} {invoice.BuyerCity}",
             invoice.BuyerProvince,
@@ -181,7 +198,12 @@ public static class InvoicePdf
     private static double DrawShipping(XGraphics graphics, Invoice invoice, XFont regular, XBrush ink, double y)
     {
         graphics.DrawString("Transporte", regular, ink, new XRect(54, y, 210, 14), XStringFormats.TopLeft);
-        graphics.DrawString(Rate(invoice.ShippingVatRate), regular, ink, new XRect(392, y, 50, 14), XStringFormats.TopRight);
+        graphics.DrawString(
+            invoice.ShippingVatRate is { } shippingRate ? Rate(shippingRate) : Invoice.UndeterminedShippingVatLabel,
+            regular,
+            ink,
+            new XRect(392, y, 50, 14),
+            XStringFormats.TopRight);
         graphics.DrawString(Money(invoice.ShippingCents), regular, ink, new XRect(448, y, 90, 14), XStringFormats.TopRight);
         return y + 22;
     }
@@ -204,7 +226,18 @@ public static class InvoicePdf
         graphics.DrawString("Total", heading, new XSolidBrush(Wine), new XRect(300, y, 80, 16), XStringFormats.TopLeft);
         graphics.DrawString(Money(invoice.TotalCents), heading, ink, new XRect(390, y, 148, 16), XStringFormats.TopRight);
         y += 22;
-        graphics.DrawString("Importes en EUR. El precio incluye el IVA indicado.", small, muted, new XRect(48, y, 500, 12), XStringFormats.TopLeft);
+        graphics.DrawString("Importes en EUR. El precio de los productos incluye el IVA indicado.", small, muted, new XRect(48, y, 500, 12), XStringFormats.TopLeft);
+        y += 14;
+        if (invoice.Fictional && invoice.BuyerTaxId is null)
+        {
+            graphics.DrawString(Invoice.MissingTaxIdClarification, small, muted, new XRect(48, y, 500, 12), XStringFormats.TopLeft);
+            y += 14;
+        }
+
+        if (invoice.Fictional && invoice.ShippingVatRate is null)
+        {
+            graphics.DrawString(Invoice.UndeterminedShippingClarification, small, muted, new XRect(48, y, 500, 12), XStringFormats.TopLeft);
+        }
     }
 
     private static IReadOnlyList<(decimal Rate, long BaseCents, long VatCents)> Groups(Invoice invoice)
@@ -213,15 +246,20 @@ public static class InvoicePdf
             .GroupBy(line => line.VatRate)
             .Select(group => (Rate: group.Key, BaseCents: group.Sum(line => line.TaxableBaseCents), VatCents: group.Sum(line => line.VatCents)))
             .ToList();
-        var shipping = groups.FindIndex(group => group.Rate == invoice.ShippingVatRate);
-        if (shipping >= 0)
+        if (invoice.ShippingVatRate is { } shippingRate
+            && invoice.ShippingTaxableBaseCents is { } shippingBase
+            && invoice.ShippingVatCents is { } shippingVat)
         {
-            var current = groups[shipping];
-            groups[shipping] = (current.Rate, current.BaseCents + invoice.ShippingTaxableBaseCents, current.VatCents + invoice.ShippingVatCents);
-        }
-        else
-        {
-            groups.Add((invoice.ShippingVatRate, invoice.ShippingTaxableBaseCents, invoice.ShippingVatCents));
+            var shipping = groups.FindIndex(group => group.Rate == shippingRate);
+            if (shipping >= 0)
+            {
+                var current = groups[shipping];
+                groups[shipping] = (current.Rate, current.BaseCents + shippingBase, current.VatCents + shippingVat);
+            }
+            else
+            {
+                groups.Add((shippingRate, shippingBase, shippingVat));
+            }
         }
 
         return groups.OrderBy(group => group.Rate).ToList();
@@ -262,21 +300,4 @@ public static class InvoicePdf
         return cut + ellipsis;
     }
 
-    private static string ResolveFamily()
-    {
-        foreach (var name in new[] { "Calibri", "Segoe UI", "Arial" })
-        {
-            try
-            {
-                _ = new XFont(name, 10, XFontStyleEx.Regular);
-                return name;
-            }
-            catch (Exception)
-            {
-                continue;
-            }
-        }
-
-        throw new InvalidOperationException("No hay una fuente disponible para la factura.");
-    }
 }

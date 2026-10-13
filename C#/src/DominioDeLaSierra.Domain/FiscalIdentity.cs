@@ -110,6 +110,22 @@ public static class FiscalIdentity
         return true;
     }
 
+    public static bool TryContact(
+        string? legalName,
+        string? addressLine,
+        string? postalCode,
+        string? city,
+        string? province,
+        string? countryCode)
+    {
+        return TryText(legalName, LegalNameMaxLength, out _)
+            && TryText(addressLine, AddressLineMaxLength, out _)
+            && TryText(postalCode, PostalCodeMaxLength, out _)
+            && TryText(city, CityMaxLength, out _)
+            && TryText(province, ProvinceMaxLength, out _)
+            && TryCountry(countryCode, out _);
+    }
+
     private static bool TryCountry(string? value, out string country)
     {
         country = value?.Trim().ToUpperInvariant() ?? string.Empty;

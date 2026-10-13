@@ -44,22 +44,70 @@ public class InvoicePdfTests
     }
 
     [Fact]
+    public void A_test_document_without_tax_id_or_shipping_vat_is_not_a_simplified_invoice()
+    {
+        var line = Line("Vino", 900);
+        var invoice = Invoice.IssueTest(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            "DS-20261012-853cf715",
+            "F2026",
+            1,
+            new DateTimeOffset(2026, 10, 12, 18, 0, 0, TimeSpan.Zero),
+            TestDocumentIssuer.Party,
+            "Comprador de prueba",
+            null,
+            "Calle Entrega 2",
+            "37001",
+            "Avila",
+            "Salamanca",
+            "ES",
+            [line],
+            line.LineTotalCents,
+            line.TaxableBaseCents,
+            line.VatCents,
+            800,
+            null,
+            null,
+            null,
+            line.LineTotalCents + 800);
+
+        Assert.True(invoice.Fictional);
+        Assert.Equal(FiscalDocumentForm.NotApplicable, invoice.FiscalForm);
+        Assert.Null(invoice.BuyerTaxId);
+        Assert.Null(invoice.ShippingVatRate);
+        Assert.Equal(1700, invoice.TotalCents);
+        var text = InvoicePdfInspection.Read(InvoicePdf.Render(invoice));
+        Assert.Contains(Invoice.TestBanner, text);
+        Assert.Contains(Invoice.MissingTaxIdClarification, text);
+        Assert.Contains(Invoice.UndeterminedShippingClarification, text);
+        Assert.Contains("17,00 EUR", text);
+        Assert.DoesNotContain("Factura simplificada", text);
+        Assert.Equal("ficticio-F2026-000001.pdf", invoice.DownloadFileName);
+    }
+
+    [Fact]
     public void Rejects_an_inconsistent_snapshot()
     {
         var line = Line("Vino", 100);
         var seller = Party("Emisor ficticio de pruebas");
         var buyer = Party("Señorío");
 
-        Assert.Throws<ArgumentException>(() => Invoice.Issue(
+        Assert.Throws<ArgumentException>(() => Invoice.IssueTest(
             Guid.NewGuid(),
             Guid.NewGuid(),
             "DS-TEST-00000001",
             "F2026",
             1,
             DateTimeOffset.UnixEpoch,
-            true,
             seller,
-            buyer,
+            buyer.LegalName,
+            buyer.TaxId,
+            buyer.AddressLine,
+            buyer.PostalCode,
+            buyer.City,
+            buyer.Province,
+            buyer.CountryCode,
             [line],
             line.LineTotalCents + 1,
             line.TaxableBaseCents,
@@ -79,10 +127,19 @@ public class InvoicePdfTests
         Assert.False(options.Enabled);
         Assert.False(options.Fictional);
         Assert.False(options.IsSellerReady());
-        InvoiceIssuanceGuard.Ensure("Development", options);
-        InvoiceIssuanceGuard.Ensure("Testing", options);
-        Assert.Throws<InvalidOperationException>(() => InvoiceIssuanceGuard.Ensure("Development", new InvoiceOptions { Fictional = true }));
-        Assert.Throws<InvalidOperationException>(() => InvoiceIssuanceGuard.Ensure("Testing", new InvoiceOptions { Enabled = true }));
+        Assert.False(FiscalDocumentFormRules.MissingTaxIdAllowsSimplified);
+        InvoiceIssuanceGuard.Ensure(options, stripeTestActive: true);
+        InvoiceIssuanceGuard.Ensure(new InvoiceOptions { Enabled = true }, stripeTestActive: true);
+        InvoiceIssuanceGuard.Ensure(new InvoiceOptions { Fictional = true }, stripeTestActive: false);
+        Assert.Throws<InvalidOperationException>(() =>
+            InvoiceIssuanceGuard.Ensure(new InvoiceOptions { Enabled = true, Fictional = true }, stripeTestActive: false));
+        Assert.Equal(FiscalDocumentForm.NotApplicable, FiscalDocumentFormRules.Classify(testDocument: true, hasBuyerTaxId: false));
+        Assert.Equal(FiscalDocumentForm.Complete, FiscalDocumentFormRules.Classify(testDocument: false, hasBuyerTaxId: true));
+        Assert.Throws<InvalidOperationException>(() => FiscalDocumentFormRules.Classify(testDocument: false, hasBuyerTaxId: false));
+        Assert.False(InvoiceStripeMode.IsLiveSecret("sk_test_123"));
+        Assert.True(InvoiceStripeMode.IsTest("Stub", "sk_live_5123456789abcdef"));
+        Assert.True(InvoiceStripeMode.IsTest(null, "sk_test_123"));
+        Assert.False(InvoiceStripeMode.IsTest("Stripe", "sk_live_5123456789abcdef"));
     }
 
     private static Invoice Sample(int lineCount, bool fictional)
@@ -100,16 +157,45 @@ public class InvoicePdfTests
             vat += line.VatCents;
         }
 
-        return Invoice.Issue(
+        var seller = Party("Emisor ficticio de pruebas");
+        var buyer = Party("Señorío de Ávila");
+        if (!fictional)
+        {
+            return Invoice.IssueFiscal(
+                Guid.NewGuid(),
+                Guid.NewGuid(),
+                "DS-TEST-00000001",
+                "F2026",
+                1,
+                new DateTimeOffset(2026, 10, 11, 18, 0, 0, TimeSpan.Zero),
+                new InvoiceParty("Dominio fiscal de prueba", "B00000000", "Calle Fiscal 1", "37000", "Salamanca", "Salamanca", "ES"),
+                buyer,
+                lines,
+                subtotal,
+                taxableBase,
+                vat,
+                0,
+                21m,
+                0,
+                0,
+                subtotal);
+        }
+
+        return Invoice.IssueTest(
             Guid.NewGuid(),
             Guid.NewGuid(),
             "DS-TEST-00000001",
             "F2026",
             1,
             new DateTimeOffset(2026, 10, 11, 18, 0, 0, TimeSpan.Zero),
-            fictional,
-            Party("Emisor ficticio de pruebas"),
-            Party("Señorío de Ávila"),
+            seller,
+            buyer.LegalName,
+            buyer.TaxId,
+            buyer.AddressLine,
+            buyer.PostalCode,
+            buyer.City,
+            buyer.Province,
+            buyer.CountryCode,
             lines,
             subtotal,
             taxableBase,

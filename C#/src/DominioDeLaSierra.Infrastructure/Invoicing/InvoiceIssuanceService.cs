@@ -5,7 +5,7 @@ using DominioDeLaSierra.Domain.Entities;
 using DominioDeLaSierra.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
-using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
@@ -14,7 +14,7 @@ namespace DominioDeLaSierra.Infrastructure.Invoicing;
 public sealed class InvoiceIssuanceService(
     ApplicationDbContext db,
     IOptions<InvoiceOptions> options,
-    IHostEnvironment environment,
+    IConfiguration configuration,
     InvoiceIssuanceFailureProbe failures) : IInvoiceIssuance
 {
     public async Task<InvoicePanel?> DescribeAsync(Guid orderId, CancellationToken cancellationToken = default)
@@ -25,17 +25,26 @@ public sealed class InvoiceIssuanceService(
             return Issued(invoice);
         }
 
-        var order = await db.Orders.AsNoTracking()
+        var order = await Orders()
             .SingleOrDefaultAsync(item => item.Id == orderId, cancellationToken);
         if (order is null)
         {
             return null;
         }
 
-        var notice = BlockReason(order);
-        return notice is null
-            ? new InvoicePanel(false, false, null, null, true, null, "Descargar factura")
-            : Blocked(notice, order.Status == OrderStatus.Paid);
+        var decision = Decide(order);
+        if (decision.Kind == IssueKind.Blocked)
+        {
+            var paid = order.Status == OrderStatus.Paid;
+            var label = paid
+                ? PlatformIsTest() ? "Descargar documento de prueba" : "Descargar factura"
+                : string.Empty;
+            return new InvoicePanel(false, false, null, null, false, decision.Notice, label);
+        }
+
+        return decision.Kind == IssueKind.Test
+            ? new InvoicePanel(false, true, null, null, true, Invoice.TestBanner, "Descargar documento de prueba")
+            : new InvoicePanel(false, false, null, null, true, null, "Descargar factura");
     }
 
     public async Task<InvoiceFile> DownloadAsync(Guid orderId, CancellationToken cancellationToken = default)
@@ -62,10 +71,20 @@ public sealed class InvoiceIssuanceService(
             }
 
             var invoice = await CreateAsync(orderId, cancellationToken);
+            byte[] content;
+            try
+            {
+                content = InvoicePdf.Render(invoice);
+            }
+            catch (InvalidOperationException)
+            {
+                throw new InvoiceIssuanceException(InvoiceIssuanceRules.PdfMessage);
+            }
+
             db.Invoices.Add(invoice);
             await db.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
-            return Render(invoice);
+            return File(invoice, content);
         }
         catch (DbUpdateException exception) when (IsOrderConflict(exception))
         {
@@ -82,42 +101,23 @@ public sealed class InvoiceIssuanceService(
 
     private async Task<Invoice> CreateAsync(Guid orderId, CancellationToken cancellationToken)
     {
-        var order = await db.Orders.AsNoTracking()
-            .Include(item => item.Items)
+        var order = await Orders()
             .SingleOrDefaultAsync(item => item.Id == orderId, cancellationToken)
             ?? throw new InvoiceIssuanceException(InvoiceIssuanceRules.MissingOrderMessage);
-        var notice = BlockReason(order);
-        if (notice is not null)
+        var decision = Decide(order);
+        if (decision.Kind == IssueKind.Blocked)
         {
-            throw new InvoiceIssuanceException(notice);
+            throw new InvoiceIssuanceException(decision.Notice!);
         }
 
         var current = options.Value;
         var series = FiscalIdentity.RequireSeries(current.Series);
-        var seller = FiscalIdentity.RequireParty(
-            current.Seller.LegalName,
-            current.Seller.TaxId,
-            current.Seller.AddressLine,
-            current.Seller.PostalCode,
-            current.Seller.City,
-            current.Seller.Province,
-            current.Seller.CountryCode);
-        var buyer = FiscalIdentity.RequireParty(
-            order.CustomerName,
-            order.CustomerTaxId,
-            order.AddressLine,
-            order.PostalCode,
-            order.City,
-            order.Province,
-            order.CountryCode);
         var number = await ReserveNumberAsync(series, current.FirstNumber, cancellationToken);
         if (failures.ConsumeFailure())
         {
             throw new InvalidOperationException("Fallo de prueba antes de emitir la factura.");
         }
 
-        var shippingRate = order.ShippingVatRate
-            ?? throw new InvoiceIssuanceException(InvoiceIssuanceRules.ShippingVatMessage);
         var drafts = order.Items.Select(item => new InvoiceLineDraft(
             item.Name,
             item.Reference,
@@ -129,64 +129,127 @@ public sealed class InvoiceIssuanceService(
             item.VatCents)).ToList();
         try
         {
-            return Invoice.Issue(
-                Guid.NewGuid(),
-                order.Id,
-                order.Number,
-                series,
-                number,
-                DateTimeOffset.UtcNow,
-                current.Fictional,
-                seller,
-                buyer,
-                drafts,
-                order.ProductSubtotalCents,
-                order.ProductTaxableBaseCents,
-                order.ProductVatCents,
-                order.ShippingCents,
-                shippingRate,
-                order.ShippingTaxableBaseCents ?? -1,
-                order.ShippingVatCents ?? -1,
-                order.TotalCents);
+            return decision.Kind == IssueKind.Test
+                ? Invoice.IssueTest(
+                    Guid.NewGuid(),
+                    order.Id,
+                    order.Number,
+                    series,
+                    number,
+                    DateTimeOffset.UtcNow,
+                    TestDocumentIssuer.Party,
+                    order.CustomerName,
+                    order.CustomerTaxId,
+                    order.AddressLine,
+                    order.PostalCode,
+                    order.City,
+                    order.Province,
+                    order.CountryCode,
+                    drafts,
+                    order.ProductSubtotalCents,
+                    order.ProductTaxableBaseCents,
+                    order.ProductVatCents,
+                    order.ShippingCents,
+                    order.ShippingVatRate,
+                    order.ShippingTaxableBaseCents,
+                    order.ShippingVatCents,
+                    order.TotalCents)
+                : Invoice.IssueFiscal(
+                    Guid.NewGuid(),
+                    order.Id,
+                    order.Number,
+                    series,
+                    number,
+                    DateTimeOffset.UtcNow,
+                    ConfirmedSeller(),
+                    Buyer(order),
+                    drafts,
+                    order.ProductSubtotalCents,
+                    order.ProductTaxableBaseCents,
+                    order.ProductVatCents,
+                    order.ShippingCents,
+                    order.ShippingVatRate!.Value,
+                    order.ShippingTaxableBaseCents!.Value,
+                    order.ShippingVatCents!.Value,
+                    order.TotalCents);
         }
         catch (ArgumentException)
         {
             throw new InvoiceIssuanceException(InvoiceIssuanceRules.InconsistentMessage);
         }
+        catch (InvalidOperationException exception) when (exception.Message == FiscalDocumentFormRules.UndeterminedMessage)
+        {
+            throw new InvoiceIssuanceException(exception.Message);
+        }
     }
 
-    private string? BlockReason(Order order)
+    private IssueDecision Decide(Order order)
     {
         if (order.Status != OrderStatus.Paid)
         {
-            return InvoiceIssuanceRules.UnpaidMessage;
+            return IssueDecision.Block(InvoiceIssuanceRules.UnpaidMessage);
         }
 
         var current = options.Value;
-        var testing = InvoiceIssuanceGuard.IsTesting(environment.EnvironmentName);
         if (!current.Enabled)
         {
-            return InvoiceIssuanceRules.PendingConfigurationMessage;
-        }
-
-        if (current.Fictional && !testing)
-        {
-            return InvoiceIssuanceRules.FictionalOutsideMessage;
-        }
-
-        if (testing && !current.Fictional)
-        {
-            return InvoiceIssuanceRules.FictionalTestingMessage;
+            return IssueDecision.Block(InvoiceIssuanceRules.PendingConfigurationMessage);
         }
 
         if (!current.IsSeriesReady())
         {
-            return InvoiceIssuanceRules.PendingConfigurationMessage;
+            return IssueDecision.Block(InvoiceIssuanceRules.PendingConfigurationMessage);
+        }
+
+        if (!ProductAmountsMatch(order) || !ShippingAmountsMatch(order))
+        {
+            return IssueDecision.Block(InvoiceIssuanceRules.InconsistentMessage);
+        }
+
+        var platformTest = PlatformIsTest();
+        var testSession = HasSessionPrefix(order, "cs_test_");
+        var liveSession = HasSessionPrefix(order, "cs_live_");
+        if (platformTest && liveSession)
+        {
+            return IssueDecision.Block(InvoiceIssuanceRules.MixedStripeMessage);
+        }
+
+        if (platformTest || testSession)
+        {
+            if (!FiscalIdentity.TryContact(
+                    order.CustomerName,
+                    order.AddressLine,
+                    order.PostalCode,
+                    order.City,
+                    order.Province,
+                    order.CountryCode))
+            {
+                return IssueDecision.Block(InvoiceIssuanceRules.BuyerMessage);
+            }
+
+            return IssueDecision.Allow(IssueKind.Test);
+        }
+
+        if (!liveSession)
+        {
+            return IssueDecision.Block(InvoiceIssuanceRules.LivePaymentRequiredMessage);
         }
 
         if (!current.IsSellerReady())
         {
-            return InvoiceIssuanceRules.SellerMessage;
+            return IssueDecision.Block(InvoiceIssuanceRules.SellerMessage);
+        }
+
+        var seller = SellerParty(current);
+        if (TestDocumentIssuer.IsReservedTaxId(seller.TaxId)
+            || seller.LegalName.Contains("ficticio", StringComparison.OrdinalIgnoreCase))
+        {
+            return IssueDecision.Block(InvoiceIssuanceRules.FictionalSellerMessage);
+        }
+
+        if (string.IsNullOrWhiteSpace(order.CustomerTaxId))
+        {
+            return IssueDecision.Block(InvoiceIssuanceRules.InvoiceFormMessage);
         }
 
         if (!FiscalIdentity.TryParty(
@@ -199,42 +262,37 @@ public sealed class InvoiceIssuanceService(
                 order.CountryCode,
                 out _))
         {
-            return InvoiceIssuanceRules.BuyerMessage;
+            return IssueDecision.Block(InvoiceIssuanceRules.BuyerMessage);
         }
 
         if (order.ShippingVatRate is null || order.ShippingTaxableBaseCents is null || order.ShippingVatCents is null)
         {
-            return InvoiceIssuanceRules.ShippingVatMessage;
+            return IssueDecision.Block(InvoiceIssuanceRules.ShippingVatMessage);
         }
 
-        if (!AmountsMatch(order))
-        {
-            return InvoiceIssuanceRules.InconsistentMessage;
-        }
-
-        return null;
+        return IssueDecision.Allow(IssueKind.Fiscal);
     }
 
-    private static bool AmountsMatch(Order order)
+    private bool PlatformIsTest() =>
+        InvoiceStripeMode.IsTest(
+            configuration["Stripe:Gateway"],
+            configuration["Stripe:SecretKey"] ?? configuration["STRIPE_SECRET_KEY"]);
+
+    private static bool HasSessionPrefix(Order order, string prefix) =>
+        order.Payments.Any(payment =>
+            payment.StripeCheckoutSessionId?.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) == true);
+
+    private static bool ProductAmountsMatch(Order order)
     {
         if (order.Items.Count == 0
             || order.ProductTaxableBaseCents + order.ProductVatCents != order.ProductSubtotalCents
-            || order.TotalCents != order.ProductSubtotalCents + order.ShippingCents
-            || order.ShippingVatRate is null
-            || order.ShippingTaxableBaseCents is null
-            || order.ShippingVatCents is null)
+            || order.TotalCents != order.ProductSubtotalCents + order.ShippingCents)
         {
             return false;
         }
 
         try
         {
-            var (shippingBase, shippingVat) = OrderAmounts.SplitGross(order.ShippingCents, order.ShippingVatRate.Value);
-            if (shippingBase != order.ShippingTaxableBaseCents || shippingVat != order.ShippingVatCents)
-            {
-                return false;
-            }
-
             long subtotal = 0;
             long taxableBase = 0;
             long vat = 0;
@@ -266,6 +324,67 @@ public sealed class InvoiceIssuanceService(
             return false;
         }
     }
+
+    private static bool ShippingAmountsMatch(Order order)
+    {
+        if (order.ShippingVatRate is null && order.ShippingTaxableBaseCents is null && order.ShippingVatCents is null)
+        {
+            return true;
+        }
+
+        if (order.ShippingVatRate is null || order.ShippingTaxableBaseCents is null || order.ShippingVatCents is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            var (shippingBase, shippingVat) = OrderAmounts.SplitGross(order.ShippingCents, order.ShippingVatRate.Value);
+            return shippingBase == order.ShippingTaxableBaseCents && shippingVat == order.ShippingVatCents;
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+    }
+
+    private InvoiceParty ConfirmedSeller()
+    {
+        var seller = options.Value.Seller;
+        return FiscalIdentity.RequireParty(
+            seller.LegalName,
+            seller.TaxId,
+            seller.AddressLine,
+            seller.PostalCode,
+            seller.City,
+            seller.Province,
+            seller.CountryCode);
+    }
+
+    private static InvoiceParty SellerParty(InvoiceOptions current) =>
+        new(
+            current.Seller.LegalName.Trim(),
+            current.Seller.TaxId.Trim().ToUpperInvariant(),
+            current.Seller.AddressLine.Trim(),
+            current.Seller.PostalCode.Trim(),
+            current.Seller.City.Trim(),
+            current.Seller.Province.Trim(),
+            current.Seller.CountryCode.Trim().ToUpperInvariant());
+
+    private static InvoiceParty Buyer(Order order) =>
+        FiscalIdentity.RequireParty(
+            order.CustomerName,
+            order.CustomerTaxId,
+            order.AddressLine,
+            order.PostalCode,
+            order.City,
+            order.Province,
+            order.CountryCode);
+
+    private IQueryable<Order> Orders() =>
+        db.Orders.AsNoTracking()
+            .Include(order => order.Items)
+            .Include(order => order.Payments);
 
     private async Task<int> ReserveNumberAsync(string series, int firstNumber, CancellationToken cancellationToken)
     {
@@ -356,19 +475,19 @@ public sealed class InvoiceIssuanceService(
             invoice.Fictional ? Invoice.FictionalBanner : null,
             invoice.Fictional ? "Descargar documento de prueba" : "Descargar factura");
 
-    private static InvoicePanel Blocked(string notice, bool showAction) =>
-        new(false, false, null, null, false, notice, showAction ? "Descargar factura" : string.Empty);
-
     private static InvoiceFile Render(Invoice invoice)
     {
-        return new InvoiceFile(
-            InvoicePdf.Render(invoice),
+        return File(invoice, InvoicePdf.Render(invoice));
+    }
+
+    private static InvoiceFile File(Invoice invoice, byte[] content) =>
+        new(
+            content,
             invoice.DownloadFileName,
             invoice.FullNumber,
             invoice.IssuedAt,
             invoice.Fictional,
             invoice.TotalCents);
-    }
 
     private static bool IsOrderConflict(DbUpdateException exception)
     {
@@ -383,5 +502,19 @@ public sealed class InvoiceIssuanceService(
         }
 
         return false;
+    }
+
+    private enum IssueKind
+    {
+        Test,
+        Fiscal,
+        Blocked
+    }
+
+    private readonly record struct IssueDecision(IssueKind Kind, string? Notice)
+    {
+        public static IssueDecision Block(string notice) => new(IssueKind.Blocked, notice);
+
+        public static IssueDecision Allow(IssueKind kind) => new(kind, null);
     }
 }

@@ -77,21 +77,27 @@ public sealed class InvoiceIssuanceTests(PostgresFixture fixture) : DatabaseTest
     }
 
     [Fact]
-    public async Task Rejects_missing_seller_and_undetermined_shipping_vat()
+    public async Task Test_mode_issues_without_seller_or_shipping_vat_and_live_mode_blocks_both()
     {
-        var withoutVat = await SavePaidOrderAsync(taxId: "FICTICIO-TEST", shippingVat: null);
-        var withoutSeller = await SavePaidOrderAsync(taxId: "FICTICIO-TEST", shippingVat: 21m);
-        await using var missingSeller = IssuingFactory(seller: false);
-        await using var ready = IssuingFactory();
+        var testOrder = await SavePaidOrderAsync(taxId: "B12345678", shippingVat: 21m, session: "cs_test_");
+        var withoutVat = await SavePaidOrderAsync(taxId: "B12345678", shippingVat: null, session: "cs_live_");
+        var withoutSeller = await SavePaidOrderAsync(taxId: "B12345678", shippingVat: 21m, session: "cs_live_");
+        await using var testMode = IssuingFactory(seller: false);
+        await using var liveWithoutSeller = LiveFactory(seller: false);
+        await using var live = LiveFactory();
 
-        var sellerResult = await Assert.ThrowsAsync<InvoiceIssuanceException>(() => DownloadAsync(missingSeller, withoutSeller));
+        var testFile = await DownloadAsync(testMode, testOrder);
+        Assert.True(testFile.Fictional);
+        Assert.Contains(Invoice.TestBanner, InvoicePdfInspection.Read(testFile.Content));
+
+        var sellerResult = await Assert.ThrowsAsync<InvoiceIssuanceException>(() => DownloadAsync(liveWithoutSeller, withoutSeller));
         Assert.Equal(InvoiceIssuanceRules.SellerMessage, sellerResult.Message);
-        var shippingResult = await Assert.ThrowsAsync<InvoiceIssuanceException>(() => DownloadAsync(ready, withoutVat));
+        var shippingResult = await Assert.ThrowsAsync<InvoiceIssuanceException>(() => DownloadAsync(live, withoutVat));
         Assert.Equal(InvoiceIssuanceRules.ShippingVatMessage, shippingResult.Message);
 
         var counts = await CountsAsync();
-        Assert.Equal(0, counts.Invoices);
-        Assert.Equal(0, counts.Series);
+        Assert.Equal(1, counts.Invoices);
+        Assert.Equal(1, counts.Series);
     }
 
     [Fact]
@@ -186,7 +192,181 @@ public sealed class InvoiceIssuanceTests(PostgresFixture fixture) : DatabaseTest
         Assert.Equal(4, await db.InvoiceSeries.Select(series => series.NextNumber).SingleAsync());
     }
 
-    private async Task<Guid> SavePaidOrderAsync(string? taxId, decimal? shippingVat, bool paid = true, string customer = "Comprador de prueba")
+    [Fact]
+    public async Task A_pdf_failure_does_not_persist_the_invoice_or_consume_a_number()
+    {
+        var orderId = await SaveStripeTestOrderAsync();
+        await using var issuing = IssuingFactory();
+        InvoicePdf.FailNextRender();
+        try
+        {
+            var result = await Assert.ThrowsAsync<InvoiceIssuanceException>(() => DownloadAsync(issuing, orderId));
+            Assert.Equal(InvoiceIssuanceRules.PdfMessage, result.Message);
+        }
+        finally
+        {
+            InvoicePdf.ResetRenderFailures();
+        }
+
+        var counts = await CountsAsync();
+        Assert.Equal(0, counts.Invoices);
+        Assert.Equal(0, counts.Series);
+        var recovered = await DownloadAsync(issuing, orderId);
+        Assert.Equal("F2026-000001", recovered.FullNumber);
+    }
+
+    [Fact]
+    public async Task Stripe_test_order_of_seventeen_euros_gets_a_non_fiscal_document_without_changing_the_order()
+    {
+        await TestCatalog.SeedAsync();
+        var orderId = await SaveStripeTestOrderAsync();
+        await using var issuing = IssuingFactory(fictional: false);
+        using var client = Client(issuing);
+        await LoginAsync(client, TestAccounts.AdminUsername);
+
+        var html = Text(await client.GetStringAsync($"/admin/orders/{orderId}"));
+        Assert.Contains(Invoice.TestBanner, html);
+        Assert.Contains("Descargar documento de prueba", html);
+        Assert.DoesNotContain("type=\"button\" disabled", html);
+
+        var response = await PostDownloadAsync(client, orderId);
+        var file = await ReadPdfAsync(response);
+        Assert.Equal("ficticio-F2026-000001.pdf", file.FileName);
+        Assert.Contains(Invoice.TestBanner, file.Text);
+        Assert.Contains(Invoice.MissingTaxIdClarification, file.Text);
+        Assert.Contains(Invoice.UndeterminedShippingClarification, file.Text);
+        Assert.Contains(TestDocumentIssuer.LegalName, file.Text);
+        Assert.Contains(TestDocumentIssuer.TaxId, file.Text);
+        Assert.Contains("17,00 EUR", file.Text);
+        Assert.DoesNotContain("Factura simplificada", file.Text);
+
+        await using var scope = Fixture.Factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var order = await db.Orders.AsNoTracking().SingleAsync(item => item.Id == orderId);
+        var invoice = await db.Invoices.AsNoTracking().SingleAsync();
+        Assert.Equal(900, order.ProductSubtotalCents);
+        Assert.Equal(800, order.ShippingCents);
+        Assert.Equal(1700, order.TotalCents);
+        Assert.Null(order.CustomerTaxId);
+        Assert.Null(order.ShippingVatRate);
+        Assert.True(invoice.Fictional);
+        Assert.Equal(FiscalDocumentForm.NotApplicable, invoice.FiscalForm);
+        Assert.Null(invoice.BuyerTaxId);
+        Assert.Null(invoice.ShippingVatRate);
+        Assert.Equal(TestDocumentIssuer.TaxId, invoice.SellerTaxId);
+        Assert.Equal("F2026-000001", invoice.FullNumber);
+    }
+
+    [Fact]
+    public async Task A_test_document_stays_non_fiscal_when_configuration_changes()
+    {
+        var orderId = await SavePaidOrderAsync(taxId: "B12345678", shippingVat: 21m, session: "cs_test_");
+        await using var issuing = IssuingFactory(fictional: false);
+        var first = await DownloadAsync(issuing, orderId);
+        await using var live = LiveFactory();
+        var again = await DownloadAsync(live, orderId);
+
+        Assert.True(first.Fictional);
+        Assert.True(again.Fictional);
+        Assert.Equal(first.FullNumber, again.FullNumber);
+        Assert.Contains(Invoice.TestBanner, InvoicePdfInspection.Read(again.Content));
+        Assert.DoesNotContain("Factura simplificada", InvoicePdfInspection.Read(again.Content));
+
+        await using var scope = Fixture.Factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var stored = await db.Invoices.AsNoTracking().SingleAsync();
+        Assert.True(stored.Fictional);
+        Assert.Equal(FiscalDocumentForm.NotApplicable, stored.FiscalForm);
+        Assert.Equal(1, await db.Invoices.CountAsync());
+    }
+
+    [Fact]
+    public async Task Live_stripe_cannot_turn_a_test_payment_into_a_fiscal_invoice_or_a_simplified_one()
+    {
+        var testPayment = await SavePaidOrderAsync(taxId: "B12345678", shippingVat: 21m, session: "cs_test_");
+        var withoutTaxId = await SavePaidOrderAsync(taxId: null, shippingVat: 21m, session: "cs_live_");
+        var fiscalOrder = await SavePaidOrderAsync(taxId: "B12345678", shippingVat: 21m, session: "cs_live_");
+        await using var live = LiveFactory();
+
+        var testDocument = await DownloadAsync(live, testPayment);
+        Assert.True(testDocument.Fictional);
+        Assert.Contains(Invoice.TestBanner, InvoicePdfInspection.Read(testDocument.Content));
+
+        var missingTaxId = await Assert.ThrowsAsync<InvoiceIssuanceException>(() => DownloadAsync(live, withoutTaxId));
+        Assert.Equal(InvoiceIssuanceRules.InvoiceFormMessage, missingTaxId.Message);
+
+        var fiscal = await DownloadAsync(live, fiscalOrder);
+        Assert.False(fiscal.Fictional);
+        Assert.Equal($"factura-{fiscal.FullNumber}.pdf", fiscal.FileName);
+        Assert.DoesNotContain(Invoice.TestBanner, InvoicePdfInspection.Read(fiscal.Content));
+
+        await using var scope = Fixture.Factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var forms = await db.Invoices.AsNoTracking().Select(invoice => invoice.FiscalForm).ToListAsync();
+        Assert.Contains(FiscalDocumentForm.NotApplicable, forms);
+        Assert.Contains(FiscalDocumentForm.Complete, forms);
+        Assert.DoesNotContain(FiscalDocumentForm.Simplified, forms);
+    }
+
+    [Fact]
+    public async Task Stripe_test_mode_refuses_a_fiscal_invoice_even_when_the_fictional_flag_is_off()
+    {
+        var orderId = await SavePaidOrderAsync(taxId: "B12345678", shippingVat: 21m, session: "cs_live_");
+        await using var testMode = IssuingFactory(fictional: false);
+
+        var result = await Assert.ThrowsAsync<InvoiceIssuanceException>(() => DownloadAsync(testMode, orderId));
+        Assert.Equal(InvoiceIssuanceRules.MixedStripeMessage, result.Message);
+        var counts = await CountsAsync();
+        Assert.Equal(0, counts.Invoices);
+        Assert.Equal(0, counts.Series);
+    }
+
+    private async Task<Guid> SaveStripeTestOrderAsync()
+    {
+        var harness = new CatalogHarness(Fixture.Factory.Services);
+        var categoryId = await harness.CreateCategoryAsync();
+        var product = await harness.CreateProductAsync(categoryId, "INV-" + Guid.NewGuid().ToString("N")[..8], ProductKind.Wine, vintage: "2024");
+        var createdAt = new DateTimeOffset(2026, 10, 12, 18, 0, 0, TimeSpan.Zero);
+        const long cents = 900;
+        var order = Order.CreatePending(
+            Guid.NewGuid(),
+            "DS-20261012-" + Guid.NewGuid().ToString("N")[..8],
+            Guid.NewGuid().ToString("N"),
+            "Comprador de prueba",
+            "ficticio-correo@example.test",
+            "600111222",
+            "Calle Entrega 2",
+            "37001",
+            "Avila",
+            "Salamanca",
+            null,
+            [new OrderLine(product.Id, "Vino de prueba", product.Reference, ProductKind.Wine, 1, cents, 21m, null)],
+            createdAt);
+        var payment = order.AddPayment(Guid.NewGuid(), createdAt);
+        order.AssignHostedCheckout(
+            payment.Id,
+            "cs_test_" + Guid.NewGuid().ToString("N"),
+            "https://checkout.stripe.com/c/pay/cs_test_audit",
+            createdAt.AddMinutes(30));
+        order.MarkPaid(payment.Id, createdAt.AddMinutes(1));
+
+        await using var scope = Fixture.Factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        db.Orders.Add(order);
+        await db.SaveChangesAsync();
+        Assert.Equal(1700, order.TotalCents);
+        Assert.Equal(800, order.ShippingCents);
+        Assert.Null(order.CustomerTaxId);
+        Assert.Null(order.ShippingVatRate);
+        return order.Id;
+    }
+
+    private async Task<Guid> SavePaidOrderAsync(
+        string? taxId,
+        decimal? shippingVat,
+        bool paid = true,
+        string customer = "Comprador de prueba",
+        string? session = null)
     {
         var harness = new CatalogHarness(Fixture.Factory.Services);
         var categoryId = await harness.CreateCategoryAsync();
@@ -218,6 +398,11 @@ public sealed class InvoiceIssuanceTests(PostgresFixture fixture) : DatabaseTest
         }
 
         var payment = order.AddPayment(Guid.NewGuid(), createdAt);
+        if (session is not null)
+        {
+            order.AssignCheckoutSession(payment.Id, session + Guid.NewGuid().ToString("N"));
+        }
+
         if (paid)
         {
             order.MarkPaid(payment.Id, createdAt.AddMinutes(1));
@@ -230,13 +415,14 @@ public sealed class InvoiceIssuanceTests(PostgresFixture fixture) : DatabaseTest
         return order.Id;
     }
 
-    private WebApplicationFactory<Program> IssuingFactory(bool seller = true)
+    private WebApplicationFactory<Program> IssuingFactory(bool seller = true, bool fictional = true)
     {
         return Fixture.Factory.WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Testing");
+            builder.UseSetting("Stripe:Gateway", "Stub");
             builder.UseSetting("InvoiceIssuance:Enabled", "true");
-            builder.UseSetting("InvoiceIssuance:Fictional", "true");
+            builder.UseSetting("InvoiceIssuance:Fictional", fictional ? "true" : "false");
             builder.UseSetting("InvoiceIssuance:Series", "F2026");
             builder.UseSetting("InvoiceIssuance:FirstNumber", "1");
             builder.UseSetting("InvoiceIssuance:Seller:LegalName", seller ? "Emisor ficticio de pruebas" : "");
@@ -245,6 +431,30 @@ public sealed class InvoiceIssuanceTests(PostgresFixture fixture) : DatabaseTest
             builder.UseSetting("InvoiceIssuance:Seller:PostalCode", seller ? "00000" : "");
             builder.UseSetting("InvoiceIssuance:Seller:City", seller ? "Ciudad de prueba" : "");
             builder.UseSetting("InvoiceIssuance:Seller:Province", seller ? "Provincia de prueba" : "");
+            builder.UseSetting("InvoiceIssuance:Seller:CountryCode", seller ? "ES" : "");
+        });
+    }
+
+    private WebApplicationFactory<Program> LiveFactory(bool seller = true, bool fictional = false)
+    {
+        return Fixture.Factory.WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Production");
+            builder.UseSetting("Stripe:Gateway", "Stripe");
+            builder.UseSetting("Stripe:SecretKey", "sk_live_5123456789abcdef");
+            builder.UseSetting("Checkout:Access", "Closed");
+            builder.UseSetting("Notifications:DispatchEnabled", "false");
+            builder.UseSetting("Notifications:Delivery", "Disabled");
+            builder.UseSetting("InvoiceIssuance:Enabled", "true");
+            builder.UseSetting("InvoiceIssuance:Fictional", fictional ? "true" : "false");
+            builder.UseSetting("InvoiceIssuance:Series", "F2026");
+            builder.UseSetting("InvoiceIssuance:FirstNumber", "1");
+            builder.UseSetting("InvoiceIssuance:Seller:LegalName", seller ? "Dominio fiscal de prueba" : "");
+            builder.UseSetting("InvoiceIssuance:Seller:TaxId", seller ? "B00000000" : "");
+            builder.UseSetting("InvoiceIssuance:Seller:AddressLine", seller ? "Calle Fiscal 1" : "");
+            builder.UseSetting("InvoiceIssuance:Seller:PostalCode", seller ? "37000" : "");
+            builder.UseSetting("InvoiceIssuance:Seller:City", seller ? "Salamanca" : "");
+            builder.UseSetting("InvoiceIssuance:Seller:Province", seller ? "Salamanca" : "");
             builder.UseSetting("InvoiceIssuance:Seller:CountryCode", seller ? "ES" : "");
         });
     }
