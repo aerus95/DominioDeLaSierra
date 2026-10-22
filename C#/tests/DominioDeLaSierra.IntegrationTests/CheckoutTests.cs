@@ -13,34 +13,37 @@ namespace DominioDeLaSierra.IntegrationTests;
 public sealed class CheckoutTests(PostgresFixture fixture) : DatabaseTest(fixture)
 {
     [Fact]
-    public async Task Quotes_shipping_below_at_and_above_100_euros()
+    public async Task Quotes_shipping_at_59_99_60_00_and_60_01_euros()
     {
         var harness = new CatalogHarness(Fixture.Factory.Services);
         var categoryId = await harness.CreateCategoryAsync();
         var wine = await harness.CreateProductAsync(categoryId, "Q-WINE", ProductKind.Wine, initialStock: 20, vintage: "2024");
         using var client = Fixture.Factory.CreateClient();
 
+        await harness.UpdateAsync(wine.Id, draft => draft.Price = "59.99");
         var below = await QuoteAsync(client, wine.Id, 1, "37001");
-        Assert.Equal(1_890, below.ProductSubtotalCents);
-        Assert.Equal(328, below.ProductVatCents);
-        Assert.Equal(1_562, below.ProductTaxableBaseCents);
-        Assert.Equal(800, below.ShippingCents);
-        Assert.Null(below.ShippingVatRate);
-        Assert.True(below.ShippingVatPending);
-        Assert.Equal(2_690, below.TotalCents);
+        Assert.Equal(5_999, below.ProductSubtotalCents);
+        Assert.Equal(600, below.ShippingTaxableBaseCents);
+        Assert.Equal(21m, below.ShippingVatRate);
+        Assert.Equal(126, below.ShippingVatCents);
+        Assert.Equal(726, below.ShippingCents);
+        Assert.False(below.ShippingVatPending);
+        Assert.Equal(6_725, below.TotalCents);
 
-        await harness.UpdateAsync(wine.Id, draft => draft.Price = "100.00");
+        await harness.UpdateAsync(wine.Id, draft => draft.Price = "60.00");
         var exact = await QuoteAsync(client, wine.Id, 1, "28013");
-        Assert.Equal(10_000, exact.ProductSubtotalCents);
+        Assert.Equal(6_000, exact.ProductSubtotalCents);
         Assert.Equal(0, exact.ShippingCents);
-        Assert.Equal(10_000, exact.TotalCents);
-        Assert.Null(exact.ShippingVatRate);
+        Assert.Equal(0, exact.ShippingTaxableBaseCents);
+        Assert.Equal(0, exact.ShippingVatCents);
+        Assert.Equal(21m, exact.ShippingVatRate);
+        Assert.Equal(6_000, exact.TotalCents);
 
-        await harness.UpdateAsync(wine.Id, draft => draft.Price = "18.90");
-        var above = await QuoteAsync(client, wine.Id, 6, "08001");
-        Assert.Equal(11_340, above.ProductSubtotalCents);
+        await harness.UpdateAsync(wine.Id, draft => draft.Price = "60.01");
+        var above = await QuoteAsync(client, wine.Id, 1, "08001");
+        Assert.Equal(6_001, above.ProductSubtotalCents);
         Assert.Equal(0, above.ShippingCents);
-        Assert.Equal(11_340, above.TotalCents);
+        Assert.Equal(6_001, above.TotalCents);
     }
 
     [Fact]
@@ -65,7 +68,10 @@ public sealed class CheckoutTests(PostgresFixture fixture) : DatabaseTest(fixtur
         var (taxableBase, vat) = OrderAmounts.SplitGross(2_550, 21m);
         Assert.Equal(taxableBase, quote.ProductTaxableBaseCents);
         Assert.Equal(vat, quote.ProductVatCents);
-        Assert.Equal(2_550 + 800, quote.TotalCents);
+        Assert.Equal(2_550 + 726, quote.TotalCents);
+        Assert.Equal(21m, quote.ShippingVatRate);
+        Assert.Equal(600, quote.ShippingTaxableBaseCents);
+        Assert.Equal(126, quote.ShippingVatCents);
     }
 
     [Fact]
@@ -107,10 +113,10 @@ public sealed class CheckoutTests(PostgresFixture fixture) : DatabaseTest(fixtur
         Assert.DoesNotContain("ana@example.com", json, StringComparison.OrdinalIgnoreCase);
         var order = JsonSerializer.Deserialize<GuestOrderDto>(json, new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
         Assert.Equal(3_780, order.ProductSubtotalCents);
-        Assert.Equal(800, order.ShippingCents);
-        Assert.Null(order.ShippingVatRate);
-        Assert.True(order.ShippingVatPending);
-        Assert.Equal(4_580, order.TotalCents);
+        Assert.Equal(726, order.ShippingCents);
+        Assert.Equal(21m, order.ShippingVatRate);
+        Assert.False(order.ShippingVatPending);
+        Assert.Equal(4_506, order.TotalCents);
         Assert.Equal("PendingPayment", order.Status);
         Assert.Equal(3, (await harness.StockAsync(wine.Id))!.Quantity);
 
@@ -144,7 +150,60 @@ public sealed class CheckoutTests(PostgresFixture fixture) : DatabaseTest(fixtur
         });
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var order = (await response.Content.ReadFromJsonAsync<GuestOrderDto>())!;
+        Assert.Equal(3_780, order.ProductSubtotalCents);
+        Assert.Equal(600, order.ShippingTaxableBaseCents);
+        Assert.Equal(126, order.ShippingVatCents);
+        Assert.Equal(726, order.ShippingCents);
+        Assert.Equal(4_506, order.TotalCents);
         Assert.Equal(2, (await harness.StockAsync(wine.Id))!.Quantity);
+    }
+
+    [Fact]
+    public async Task Gives_free_shipping_to_a_pack_and_a_bottle_at_sixty_euros()
+    {
+        var harness = new CatalogHarness(Fixture.Factory.Services);
+        var categoryId = await harness.CreateCategoryAsync();
+        var wine = await harness.CreateProductAsync(categoryId, "FREE-W", ProductKind.Wine, initialStock: 8, vintage: "2024");
+        var pack = await harness.CreateProductAsync(categoryId, "FREE-P", ProductKind.Pack, componentsJson: Components(wine.Id, 1));
+        await harness.UpdateAsync(wine.Id, draft => draft.Price = "30.00");
+        await harness.UpdateAsync(pack.Id, draft => draft.Price = "30.00");
+        using var client = Fixture.Factory.CreateClient();
+
+        var quote = await client.PostAsJsonAsync("/api/v1/checkout/quotes", new
+        {
+            lines = new[] { new { productId = wine.Id, quantity = 1 }, new { productId = pack.Id, quantity = 1 } },
+            destination = new { postalCode = "37001", countryCode = "ES" }
+        });
+
+        Assert.Equal(HttpStatusCode.OK, quote.StatusCode);
+        var body = (await quote.Content.ReadFromJsonAsync<CheckoutQuoteDto>())!;
+        Assert.Equal(6_000, body.ProductSubtotalCents);
+        Assert.Equal(0, body.ShippingCents);
+        Assert.Equal(0, body.ShippingTaxableBaseCents);
+        Assert.Equal(0, body.ShippingVatCents);
+        Assert.Equal(6_000, body.TotalCents);
+    }
+
+    [Fact]
+    public async Task Refuses_to_price_shipping_when_the_vat_rates_differ()
+    {
+        var harness = new CatalogHarness(Fixture.Factory.Services);
+        var categoryId = await harness.CreateCategoryAsync();
+        var wine = await harness.CreateProductAsync(categoryId, "MIX-W", ProductKind.Wine, initialStock: 4, vintage: "2024");
+        var other = await harness.CreateProductAsync(categoryId, "MIX-S", ProductKind.Standard, initialStock: 4);
+        await harness.UpdateAsync(other.Id, draft => draft.VatRate = "10.00");
+        using var client = Fixture.Factory.CreateClient();
+
+        var quote = await client.PostAsJsonAsync("/api/v1/checkout/quotes", new
+        {
+            lines = new[] { new { productId = wine.Id, quantity = 1 }, new { productId = other.Id, quantity = 1 } },
+            destination = new { postalCode = "37001", countryCode = "ES" }
+        });
+
+        Assert.Equal(HttpStatusCode.Conflict, quote.StatusCode);
+        Assert.Equal(ShippingTariff.MixedRatesMessage, await ErrorAsync(quote));
+        Assert.Equal(0, await CountOrdersAsync());
     }
 
     [Fact]

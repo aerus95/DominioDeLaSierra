@@ -10,12 +10,14 @@ import {
   CheckoutQuote,
   CheckoutSession,
   GuestOrder,
+  PaymentProviderOffer,
   checkoutAllowedByServer,
   checkoutUsesPanelCookie,
   checkoutOutcomePayload,
   paymentSessionPayload,
   placePayload,
-  quotePayload
+  quotePayload,
+  selectablePaymentProviders
 } from './checkout';
 
 @Injectable({ providedIn: 'root' })
@@ -27,6 +29,16 @@ export class CheckoutService {
     return this.http.get<unknown>(`${environment.apiBaseUrl}/api/v1/checkout/availability`, this.options()).pipe(
       map((body) => checkoutAllowedByServer(body)),
       catchError(() => of(false))
+    );
+  }
+
+  paymentProviders(): Observable<PaymentProviderOffer[]> {
+    return this.http.get<PaymentProviderOffer[]>(
+      `${environment.apiBaseUrl}/api/v1/checkout/payment-providers`,
+      this.options()
+    ).pipe(
+      map((offers) => selectablePaymentProviders(offers)),
+      catchError(() => of([]))
     );
   }
 
@@ -44,10 +56,15 @@ export class CheckoutService {
       this.options({ 'Idempotency-Key': idempotencyKey }));
   }
 
-  pay(customer: CheckoutCustomerInput, lines: readonly CheckoutLineInput[], idempotencyKey: string): Observable<CheckoutPayment> {
+  pay(
+    customer: CheckoutCustomerInput,
+    lines: readonly CheckoutLineInput[],
+    idempotencyKey: string,
+    paymentProvider?: string
+  ): Observable<CheckoutPayment> {
     return this.http.post<CheckoutPayment>(
       `${environment.apiBaseUrl}/api/v1/checkout/payments`,
-      placePayload(customer, lines),
+      placePayload(customer, lines, paymentProvider),
       this.options({ 'Idempotency-Key': idempotencyKey }));
   }
 
@@ -61,6 +78,13 @@ export class CheckoutService {
   outcome(orderId: string, checkoutAccessToken: string): Observable<CheckoutOutcome> {
     return this.http.post<CheckoutOutcome>(
       `${environment.apiBaseUrl}/api/v1/checkout/outcome`,
+      checkoutOutcomePayload(orderId),
+      this.options({ 'Checkout-Access-Token': checkoutAccessToken }));
+  }
+
+  capturePayPal(orderId: string, checkoutAccessToken: string): Observable<CheckoutOutcome> {
+    return this.http.post<CheckoutOutcome>(
+      `${environment.apiBaseUrl}/api/v1/checkout/paypal/capture`,
       checkoutOutcomePayload(orderId),
       this.options({ 'Checkout-Access-Token': checkoutAccessToken }));
   }

@@ -40,6 +40,8 @@ public static class TestCatalog
                 "Invoices",
                 "InvoiceSeries",
                 "StockReservations",
+                "ReservationHoldIncidents",
+                "ProviderReconciliations",
                 "PaymentEvents",
                 "Payments",
                 "OrderItemComponents",

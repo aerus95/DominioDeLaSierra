@@ -15,8 +15,15 @@ public sealed class CheckoutController(
     ICheckout checkout,
     IOrderPaymentSessions sessions,
     ICheckoutOutcome outcomes,
+    IPaymentProviders providers,
     IConfiguration configuration) : ControllerBase
 {
+    [HttpGet("payment-providers")]
+    public ActionResult<IReadOnlyList<PaymentProviderOfferDto>> PaymentProviders()
+    {
+        return Ok(providers.Configured());
+    }
+
     [HttpGet("availability")]
     [CheckoutProbe]
     public ActionResult<CheckoutAvailabilityDto> Availability()
@@ -101,6 +108,10 @@ public sealed class CheckoutController(
             return Conflict(new { error = exception.Message });
         }
         catch (StripeCheckoutException exception)
+        {
+            return StatusCode(StatusCodes.Status502BadGateway, new { error = exception.Message });
+        }
+        catch (PayPalTransportException exception)
         {
             return StatusCode(StatusCodes.Status502BadGateway, new { error = exception.Message });
         }

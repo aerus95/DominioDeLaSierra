@@ -3,13 +3,16 @@ using DominioDeLaSierra.Application.Common;
 using DominioDeLaSierra.Application.Inventory;
 using DominioDeLaSierra.Domain;
 using DominioDeLaSierra.Domain.Entities;
+using DominioDeLaSierra.Infrastructure.Checkout;
 using DominioDeLaSierra.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
 namespace DominioDeLaSierra.Infrastructure.Inventory;
 
-public sealed class OrderStockService(ApplicationDbContext dbContext) : IOrderStock
+public sealed class OrderStockService(
+    ApplicationDbContext dbContext,
+    ReservationHoldIncidentRecorder incidents) : IOrderStock
 {
     public async Task ReserveAsync(Guid orderId, DateTimeOffset at, CancellationToken cancellationToken = default)
     {
@@ -77,6 +80,12 @@ public sealed class OrderStockService(ApplicationDbContext dbContext) : IOrderSt
 
     public async Task ReleaseAsync(Guid orderId, DateTimeOffset at, CancellationToken cancellationToken = default)
     {
+        if (dbContext.Database.CurrentTransaction is null && await ReleaseIsBlockedAsync(orderId, cancellationToken))
+        {
+            await NoteBlockedReleaseAsync(orderId, cancellationToken);
+            throw new InvalidOperationException(ExternalHoldRules.UncertainHoldMessage);
+        }
+
         if (dbContext.Database.CurrentTransaction is not null)
         {
             await ReleaseWithinTransactionAsync(orderId, at, cancellationToken);
@@ -86,6 +95,31 @@ public sealed class OrderStockService(ApplicationDbContext dbContext) : IOrderSt
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
         await ReleaseWithinTransactionAsync(orderId, at, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+    }
+
+    private async Task<bool> ReleaseIsBlockedAsync(Guid orderId, CancellationToken cancellationToken)
+    {
+        var payments = await dbContext.Payments
+            .Include(item => item.Events)
+            .Where(item => item.OrderId == orderId)
+            .ToListAsync(cancellationToken);
+        return payments.Any(item => item.BlocksAutomaticRelease());
+    }
+
+    private async Task NoteBlockedReleaseAsync(Guid orderId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await incidents.EnsureBlockedReleaseAsync(orderId, DateTimeOffset.UtcNow, cancellationToken);
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+        }
     }
 
     private async Task ReleaseWithinTransactionAsync(Guid orderId, DateTimeOffset at, CancellationToken cancellationToken)
@@ -116,6 +150,11 @@ public sealed class OrderStockService(ApplicationDbContext dbContext) : IOrderSt
         if (reservation.Status == StockReservationStatus.Released)
         {
             return;
+        }
+
+        if (await ReleaseIsBlockedAsync(orderId, cancellationToken))
+        {
+            throw new InvalidOperationException(ExternalHoldRules.UncertainHoldMessage);
         }
 
         var demand = StockDemand.Collect(order.Items);

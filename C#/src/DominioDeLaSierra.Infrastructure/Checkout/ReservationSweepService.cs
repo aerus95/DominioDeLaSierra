@@ -12,12 +12,14 @@ using Microsoft.Extensions.Options;
 namespace DominioDeLaSierra.Infrastructure.Checkout;
 
 /// <summary>
-/// Busca reservas vencidas y, fuera de cualquier transacción, pregunta a Stripe antes de tocar el stock.
+/// Busca reservas vencidas y, fuera de cualquier transacción, pregunta al proveedor del pago antes de tocar el stock.
+/// Stripe conserva su consulta. Redsys no tiene consulta en esta modalidad: una redirección abandonada no libera stock.
 /// Una sesión abierta, un cobro asíncrono o una respuesta fallida conservan la reserva.
 /// </summary>
 public sealed class ReservationSweepService(
     ApplicationDbContext dbContext,
     IStripeCheckoutGateway gateway,
+    IEnumerable<IPaymentStatusQuery> providerQueries,
     IOrderStock orderStock,
     ReservationSweepFailureProbe failures,
     IOptions<ReservationSweepOptions> options,
@@ -129,6 +131,11 @@ public sealed class ReservationSweepService(
         {
             logger.LogInformation("Pedido {OrderId} kept. Estado {OrderStatus}.", orderId, snapshot?.Status.ToString() ?? "Missing");
             return SweepOutcome.Kept;
+        }
+
+        if (snapshot.Provider is PaymentProvider.Redsys or PaymentProvider.PayPal)
+        {
+            return await RefuseUncertainProviderAsync(orderId, snapshot, cancellationToken);
         }
 
         StripeSessionInspection inspection;
@@ -323,6 +330,11 @@ public sealed class ReservationSweepService(
             Remember(order, payment, inspection);
         }
 
+        if (order.Payments.Any(item => item.BlocksAutomaticRelease()))
+        {
+            return SweepOutcome.Incident;
+        }
+
         var releasedNow = reservation.Status == StockReservationStatus.Reserved;
         if (releasedNow)
         {
@@ -398,14 +410,63 @@ public sealed class ReservationSweepService(
             .Where(item => item.OrderId == orderId)
             .Select(item => (StockReservationStatus?)item.Status)
             .SingleOrDefaultAsync(cancellationToken);
-        var sessionId = await dbContext.Payments
+        var pending = await dbContext.Payments
             .AsNoTracking()
             .Where(item => item.OrderId == orderId && item.Status == PaymentStatus.Pending)
-            .Select(item => item.StripeCheckoutSessionId)
+            .Select(item => new { item.StripeCheckoutSessionId, item.Provider })
             .SingleOrDefaultAsync(cancellationToken);
         return reservation is null
             ? null
-            : new HoldSnapshot(order.Status, order.ReservationExpiresAt, reservation.Value, sessionId);
+            : new HoldSnapshot(
+                order.Status,
+                order.ReservationExpiresAt,
+                reservation.Value,
+                pending?.StripeCheckoutSessionId,
+                pending?.Provider);
+    }
+
+    private async Task<SweepOutcome> RefuseUncertainProviderAsync(
+        Guid orderId,
+        HoldSnapshot snapshot,
+        CancellationToken cancellationToken)
+    {
+        var query = providerQueries.FirstOrDefault(item => item.Provider == snapshot.Provider);
+        PaymentEvidence evidence;
+        try
+        {
+            evidence = query is null
+                ? PaymentEvidence.Unknown
+                : await query.InspectAsync(orderId, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(
+                "La consulta del proveedor {Provider} ha fallado para el pedido {OrderId}. Tipo {ExceptionType}.",
+                snapshot.Provider,
+                orderId,
+                exception.GetType().Name);
+            evidence = PaymentEvidence.Unknown;
+        }
+
+        if (query is { IsConfigured: true } && PaymentRelease.MayReleaseStock(evidence))
+        {
+            logger.LogWarning(
+                "Pedido {OrderId} failed. El proveedor {Provider} indicó un cierre, pero su liberación no está implementada.",
+                orderId,
+                snapshot.Provider);
+            return SweepOutcome.Failed;
+        }
+
+        logger.LogInformation(
+            "Pedido {OrderId} failed. Proveedor {Provider}. Reserva {ReservationStatus}. Sin evidencia para liberar.",
+            orderId,
+            snapshot.Provider,
+            snapshot.ReservationStatus);
+        return SweepOutcome.Failed;
     }
 
     private static bool IsCandidate(HoldSnapshot snapshot, DateTimeOffset now)
@@ -486,5 +547,6 @@ public sealed class ReservationSweepService(
         OrderStatus Status,
         DateTimeOffset ReservationExpiresAt,
         StockReservationStatus ReservationStatus,
-        string? SessionId);
+        string? SessionId,
+        PaymentProvider? Provider);
 }

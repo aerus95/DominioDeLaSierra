@@ -190,6 +190,11 @@ public sealed class InvoiceIssuanceService(
             return IssueDecision.Block(InvoiceIssuanceRules.UnpaidMessage);
         }
 
+        if (order.Payments.Any(payment => payment.Provider != PaymentProvider.Stripe))
+        {
+            return IssueDecision.Block(InvoiceIssuanceRules.UnspecifiedProviderMessage);
+        }
+
         var current = options.Value;
         if (!current.Enabled)
         {

@@ -25,6 +25,12 @@ public sealed class ReservationSweepOptions
     public int SweepIntervalSeconds { get; set; } = ReservationSweepRules.DefaultIntervalSeconds;
 
     public int BatchSize { get; set; } = ReservationSweepRules.DefaultBatchSize;
+
+    public bool HoldAlertEnabled { get; set; }
+
+    public int HoldAlertHours { get; set; } = ReservationHoldAlertRules.DefaultThresholdHours;
+
+    public bool ProviderReconciliationEnabled { get; set; }
 }
 
 public sealed record ReservationSweepResult(int Processed, int Released, int Confirmed, int Failed, int Incidents);

@@ -14,6 +14,9 @@ namespace DominioDeLaSierra.Infrastructure.Checkout;
 public sealed class OrderPaymentSessionService(
     ApplicationDbContext dbContext,
     IStripeCheckoutGateway gateway,
+    IPaymentProviders providers,
+    RedsysPaymentStarter redsys,
+    PayPalPaymentStarter paypal,
     IConfiguration configuration,
     ICheckout checkout,
     IOrderStock orderStock) : IOrderPaymentSessions
@@ -23,11 +26,31 @@ public sealed class OrderPaymentSessionService(
         PlaceGuestOrderRequest request,
         CancellationToken cancellationToken = default)
     {
+        providers.EnsureSelectable(request.PaymentProvider);
+        if (!PaymentProviderRules.TryParse(request.PaymentProvider, out var provider))
+        {
+            throw new ArgumentException(PaymentProviderRules.RequiredMessage);
+        }
+
+        return provider switch
+        {
+            PaymentProvider.Redsys => await PayWithRedsysAsync(idempotencyKey, request, cancellationToken),
+            PaymentProvider.PayPal => await PayWithPayPalAsync(idempotencyKey, request, cancellationToken),
+            PaymentProvider.Stripe => await PayWithStripeAsync(idempotencyKey, request, cancellationToken),
+            _ => throw new ArgumentException(PaymentProviderRules.UnknownMessage)
+        };
+    }
+
+    private async Task<CheckoutPaymentDto> PayWithStripeAsync(
+        string? idempotencyKey,
+        PlaceGuestOrderRequest request,
+        CancellationToken cancellationToken)
+    {
         var placement = await checkout.PlaceGuestOrderAsync(
             idempotencyKey,
             request,
             cancellationToken,
-            StripeCheckoutExpiry.PaymentHold);
+            PaymentProviderHolds.ReservationHold(PaymentProvider.Stripe));
         if (!string.Equals(placement.Order.Status, nameof(OrderStatus.PendingPayment), StringComparison.Ordinal))
         {
             throw new InvalidOperationException(CheckoutLimits.HoldReleasedMessage);
@@ -49,13 +72,87 @@ public sealed class OrderPaymentSessionService(
                 placement.Order.ShippingVatPending,
                 session.CheckoutUrl,
                 session.ExpiresAt,
-                placement.Order.CheckoutAccessToken);
+                placement.Order.CheckoutAccessToken,
+                nameof(PaymentProvider.Stripe),
+                "GET");
         }
         catch (InvalidOperationException exception) when (RequiresRelease(exception))
         {
             await ReleaseUnpayableHoldAsync(placement.Order.OrderId, cancellationToken);
             throw new InvalidOperationException(CheckoutLimits.HoldReleasedMessage);
         }
+    }
+
+    private async Task<CheckoutPaymentDto> PayWithRedsysAsync(
+        string? idempotencyKey,
+        PlaceGuestOrderRequest request,
+        CancellationToken cancellationToken)
+    {
+        var placement = await checkout.PlaceGuestOrderAsync(
+            idempotencyKey,
+            request,
+            cancellationToken,
+            OrderAmounts.ReservationDuration);
+        if (!string.Equals(placement.Order.Status, nameof(OrderStatus.PendingPayment), StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(CheckoutLimits.HoldReleasedMessage);
+        }
+
+        try
+        {
+            return await redsys.StartAsync(placement.Order, cancellationToken);
+        }
+        catch (InvalidOperationException exception) when (
+            exception.Message == StripeCheckoutExpiry.ExpiredMessage
+            || exception.Message == OrderStockRules.MissingReservationMessage)
+        {
+            await ReleaseUnpayableHoldAsync(placement.Order.OrderId, cancellationToken);
+            throw new InvalidOperationException(CheckoutLimits.HoldReleasedMessage);
+        }
+    }
+
+    private async Task<CheckoutPaymentDto> PayWithPayPalAsync(
+        string? idempotencyKey,
+        PlaceGuestOrderRequest request,
+        CancellationToken cancellationToken)
+    {
+        var placement = await checkout.PlaceGuestOrderAsync(
+            idempotencyKey,
+            request,
+            cancellationToken,
+            OrderAmounts.ReservationDuration);
+        if (!string.Equals(placement.Order.Status, nameof(OrderStatus.PendingPayment), StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(CheckoutLimits.HoldReleasedMessage);
+        }
+
+        try
+        {
+            return await paypal.StartAsync(placement.Order, cancellationToken);
+        }
+        catch (InvalidOperationException exception) when (
+            exception.Message == StripeCheckoutExpiry.ExpiredMessage
+            || exception.Message == OrderStockRules.MissingReservationMessage)
+        {
+            dbContext.ChangeTracker.Clear();
+            if (await ExternalHoldBlocksAsync(placement.Order.OrderId, cancellationToken))
+            {
+                throw new InvalidOperationException(PayPalRules.UncertainHoldMessage);
+            }
+
+            await ReleaseUnpayableHoldAsync(placement.Order.OrderId, cancellationToken);
+            throw new InvalidOperationException(CheckoutLimits.HoldReleasedMessage);
+        }
+    }
+
+    private async Task<bool> ExternalHoldBlocksAsync(Guid orderId, CancellationToken cancellationToken)
+    {
+        var payments = await dbContext.Payments
+            .AsNoTracking()
+            .Include(item => item.Events)
+            .Where(item => item.OrderId == orderId)
+            .ToListAsync(cancellationToken);
+        return payments.Any(item => item.BlocksAutomaticRelease());
     }
 
     public async Task<CheckoutSessionDto> StartAsync(
@@ -99,11 +196,23 @@ public sealed class OrderPaymentSessionService(
             var order = await dbContext.Orders
                 .Include(item => item.Items)
                 .Include(item => item.Payments)
+                .ThenInclude(payment => payment.Events)
                 .SingleOrDefaultAsync(item => item.Id == orderId, cancellationToken);
             if (order is null
                 || (accessHash is not null && !CheckoutAccessToken.FixedEquals(order.CheckoutAccessTokenHash, accessHash)))
             {
                 throw new CheckoutNotFoundException();
+            }
+
+            if (order.Payments.Any(payment => payment.BlocksAutomaticRelease()))
+            {
+                throw new InvalidOperationException(ExternalHoldRules.UncertainHoldMessage);
+            }
+
+            var pendingProvider = order.Payments.SingleOrDefault(payment => payment.Status == PaymentStatus.Pending);
+            if (pendingProvider is not null && pendingProvider.Provider != PaymentProvider.Stripe)
+            {
+                throw new InvalidOperationException(PaymentProviderRules.NotStripeMessage);
             }
 
             EnsurePayable(order, now);
@@ -115,7 +224,7 @@ public sealed class OrderPaymentSessionService(
                 throw new InvalidOperationException(OrderStockRules.MissingReservationMessage);
             }
 
-            var pending = order.Payments.SingleOrDefault(payment => payment.Status == PaymentStatus.Pending);
+            var pending = pendingProvider;
             if (pending?.CheckoutUrl is not null && pending.CheckoutExpiresAt > now)
             {
                 var stored = new CheckoutSessionDto(pending.CheckoutUrl, pending.CheckoutExpiresAt.Value);

@@ -19,6 +19,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<Payment> Payments => Set<Payment>();
     public DbSet<PaymentEvent> PaymentEvents => Set<PaymentEvent>();
     public DbSet<StockReservation> StockReservations => Set<StockReservation>();
+    public DbSet<ReservationHoldIncident> ReservationHoldIncidents => Set<ReservationHoldIncident>();
+    public DbSet<ProviderReconciliation> ProviderReconciliations => Set<ProviderReconciliation>();
     public DbSet<FulfillmentTransition> FulfillmentTransitions => Set<FulfillmentTransition>();
     public DbSet<OrderNotification> OrderNotifications => Set<OrderNotification>();
     public DbSet<Invoice> Invoices => Set<Invoice>();

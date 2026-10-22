@@ -39,7 +39,8 @@ public sealed record PlaceGuestOrderRequest(
     string? AddressLine,
     string? City,
     string? Province,
-    string? DeliveryNotes);
+    string? DeliveryNotes,
+    string? PaymentProvider = null);
 
 public sealed record CheckoutQuoteLineDto(
     Guid ProductId,
@@ -54,8 +55,8 @@ public sealed record CheckoutQuoteLineDto(
     long VatCents);
 
 /// <summary>
-/// Presupuesto calculado en el servidor. El envío es un bruto de 8,00 € o 0 €.
-/// ShippingVatRate queda null: el tipo del envío no está confirmado y no se aplica un 21 %.
+/// Presupuesto calculado en el servidor. El porte es 0 € desde 60,00 € de productos.
+/// Por debajo, la base es 6,00 € y el IVA es el tipo único de las líneas.
 /// </summary>
 public sealed record CheckoutQuoteDto(
     IReadOnlyList<CheckoutQuoteLineDto> Lines,
@@ -64,6 +65,8 @@ public sealed record CheckoutQuoteDto(
     long ProductVatCents,
     long ShippingCents,
     decimal? ShippingVatRate,
+    long? ShippingTaxableBaseCents,
+    long? ShippingVatCents,
     long TotalCents,
     string Currency,
     bool ShippingVatPending);
@@ -76,6 +79,8 @@ public sealed record GuestOrderDto(
     long ProductVatCents,
     long ShippingCents,
     decimal? ShippingVatRate,
+    long? ShippingTaxableBaseCents,
+    long? ShippingVatCents,
     long TotalCents,
     string Currency,
     DateTimeOffset ReservationExpiresAt,
@@ -114,7 +119,10 @@ public sealed record CheckoutPaymentDto(
     bool ShippingVatPending,
     string CheckoutUrl,
     DateTimeOffset ExpiresAt,
-    string? CheckoutAccessToken = null);
+    string? CheckoutAccessToken = null,
+    string? Provider = null,
+    string? RedirectMethod = null,
+    IReadOnlyDictionary<string, string>? RedirectFields = null);
 
 public sealed record StripeCheckoutDraft(
     Guid OrderId,

@@ -7,44 +7,39 @@ public class OrderTests
 {
     private static readonly DateTimeOffset CreatedAt = new(2026, 10, 9, 9, 0, 0, TimeSpan.Zero);
 
-    [Fact]
-    public void Charges_eight_euros_below_the_free_shipping_threshold()
-    {
-        var order = Place(Wine(9_999));
-
-        Assert.Equal(9_999, order.ProductSubtotalCents);
-        Assert.Equal(800, order.ShippingCents);
-        Assert.Equal(10_799, order.TotalCents);
-        Assert.Equal(OrderAmounts.Currency, order.Currency);
-        Assert.Equal(OrderAmounts.CountryCode, order.CountryCode);
-        Assert.Null(order.ShippingVatRate);
-        Assert.Null(order.ShippingTaxableBaseCents);
-        Assert.Null(order.ShippingVatCents);
-    }
-
     [Theory]
-    [InlineData(10_000)]
-    [InlineData(10_001)]
-    public void Ships_for_free_from_one_hundred_euros_of_products(long unitPriceCents)
+    [InlineData(5_999, 726, 6_725)]
+    [InlineData(6_000, 0, 6_000)]
+    [InlineData(6_001, 0, 6_001)]
+    public void Applies_the_sixty_euro_threshold_to_the_product_subtotal(
+        long unitPriceCents,
+        long shippingCents,
+        long totalCents)
     {
         var order = Place(Wine(unitPriceCents));
 
-        Assert.Equal(0, order.ShippingCents);
-        Assert.Equal(unitPriceCents, order.TotalCents);
+        Assert.Equal(unitPriceCents, order.ProductSubtotalCents);
+        Assert.Equal(shippingCents, order.ShippingCents);
+        Assert.Equal(totalCents, order.TotalCents);
+        Assert.Equal(OrderAmounts.Currency, order.Currency);
+        Assert.Equal(OrderAmounts.CountryCode, order.CountryCode);
+        Assert.Equal(21m, order.ShippingVatRate);
+        Assert.Equal(shippingCents == 0 ? 0 : 600, order.ShippingTaxableBaseCents);
+        Assert.Equal(shippingCents == 0 ? 0 : 126, order.ShippingVatCents);
     }
 
     [Fact]
     public void Uses_the_combined_product_subtotal_before_shipping()
     {
-        var belowThreshold = Place(Wine(3_000), Wine(3_000));
-        var atThreshold = Place(Wine(5_000), Wine(5_000));
+        var belowThreshold = Place(Wine(3_000), Wine(2_999));
+        var atThreshold = Place(Wine(3_000), Wine(3_000));
 
-        Assert.Equal(6_000, belowThreshold.ProductSubtotalCents);
-        Assert.Equal(800, belowThreshold.ShippingCents);
-        Assert.Equal(6_800, belowThreshold.TotalCents);
-        Assert.Equal(10_000, atThreshold.ProductSubtotalCents);
+        Assert.Equal(5_999, belowThreshold.ProductSubtotalCents);
+        Assert.Equal(726, belowThreshold.ShippingCents);
+        Assert.Equal(6_725, belowThreshold.TotalCents);
+        Assert.Equal(6_000, atThreshold.ProductSubtotalCents);
         Assert.Equal(0, atThreshold.ShippingCents);
-        Assert.Equal(10_000, atThreshold.TotalCents);
+        Assert.Equal(6_000, atThreshold.TotalCents);
     }
 
     [Fact]
@@ -64,13 +59,14 @@ public class OrderTests
     [Fact]
     public void Sums_line_tax_instead_of_rounding_the_order_once()
     {
-        var order = Place(Wine(1_890, vatRate: 21m), Wine(1_000, vatRate: 10m));
+        var order = Place(Wine(1_890, vatRate: 21m), Wine(5_000, vatRate: 10m));
 
-        Assert.Equal(2_890, order.ProductSubtotalCents);
-        Assert.Equal(1_562 + 909, order.ProductTaxableBaseCents);
-        Assert.Equal(328 + 91, order.ProductVatCents);
-        Assert.Equal(800, order.ShippingCents);
-        Assert.Equal(3_690, order.TotalCents);
+        Assert.Equal(6_890, order.ProductSubtotalCents);
+        Assert.Equal(1_562 + 4_545, order.ProductTaxableBaseCents);
+        Assert.Equal(328 + 455, order.ProductVatCents);
+        Assert.Equal(0, order.ShippingCents);
+        Assert.Null(order.ShippingVatRate);
+        Assert.Equal(6_890, order.TotalCents);
     }
 
     [Fact]
@@ -154,19 +150,48 @@ public class OrderTests
     }
 
     [Fact]
-    public void Defines_shipping_vat_without_changing_the_gross_total()
+    public void Persists_shipping_vat_when_the_order_is_created()
     {
         var order = Place(Wine(1_000));
-        order.DefineShippingVat(21m);
 
         Assert.Equal(21m, order.ShippingVatRate);
-        Assert.Equal(661, order.ShippingTaxableBaseCents);
-        Assert.Equal(139, order.ShippingVatCents);
-        Assert.Equal(1_800, order.TotalCents);
-
+        Assert.Equal(600, order.ShippingTaxableBaseCents);
+        Assert.Equal(126, order.ShippingVatCents);
+        Assert.Equal(726, order.ShippingCents);
+        Assert.Equal(1_726, order.TotalCents);
         Assert.Equal(
             "El IVA del envío ya está definido.",
             Assert.Throws<InvalidOperationException>(() => order.DefineShippingVat(21m)).Message);
+    }
+
+    [Fact]
+    public void Refuses_a_paid_shipping_order_with_two_vat_rates()
+    {
+        Assert.Equal(
+            ShippingTariff.MixedRatesMessage,
+            Assert.Throws<InvalidOperationException>(() => Place(Wine(2_000, vatRate: 21m), Wine(2_000, vatRate: 10m))).Message);
+    }
+
+    [Fact]
+    public void Prices_a_pack_and_a_bottle_from_their_own_gross_amounts()
+    {
+        var componentId = Guid.NewGuid();
+        var order = Place(
+            Wine(1_890),
+            new OrderLine(
+                Guid.NewGuid(),
+                "Caja paisaje",
+                "PACK-1",
+                ProductKind.Pack,
+                1,
+                3_000,
+                21m,
+                [new OrderLineComponent(componentId, "Dominium", "DOM-1", 2)]));
+
+        Assert.Equal(4_890, order.ProductSubtotalCents);
+        Assert.Equal(600, order.ShippingTaxableBaseCents);
+        Assert.Equal(126, order.ShippingVatCents);
+        Assert.Equal(5_616, order.TotalCents);
     }
 
     [Fact]

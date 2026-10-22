@@ -750,11 +750,45 @@ namespace DominioDeLaSierra.Infrastructure.Persistence.Migrations
                         .HasMaxLength(3)
                         .HasColumnType("character varying(3)");
 
+                    b.Property<string>("ExternalCaptureId")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<DateTimeOffset?>("ExternalCreateAttemptedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ExternalCreateOutcome")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<string>("ExternalOperationId")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<string>("ExternalRequestFingerprint")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("ExternalRequestId")
+                        .HasMaxLength(38)
+                        .HasColumnType("character varying(38)");
+
                     b.Property<DateTimeOffset?>("FailedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid>("OrderId")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasDefaultValue("Stripe");
+
+                    b.Property<string>("RedsysOrderNumber")
+                        .HasMaxLength(12)
+                        .HasColumnType("character varying(12)");
 
                     b.Property<DateTimeOffset?>("RefundedAt")
                         .HasColumnType("timestamp with time zone");
@@ -780,6 +814,11 @@ namespace DominioDeLaSierra.Infrastructure.Persistence.Migrations
                     b.HasIndex("OrderId")
                         .HasDatabaseName("IX_Payments_OrderId");
 
+                    b.HasIndex("RedsysOrderNumber")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Payments_RedsysOrderNumber")
+                        .HasFilter("\"RedsysOrderNumber\" IS NOT NULL");
+
                     b.HasIndex("StripeCheckoutSessionId")
                         .IsUnique()
                         .HasFilter("\"StripeCheckoutSessionId\" IS NOT NULL");
@@ -787,6 +826,11 @@ namespace DominioDeLaSierra.Infrastructure.Persistence.Migrations
                     b.HasIndex("StripePaymentIntentId")
                         .IsUnique()
                         .HasFilter("\"StripePaymentIntentId\" IS NOT NULL");
+
+                    b.HasIndex("Provider", "ExternalOperationId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Payments_Provider_ExternalOperationId")
+                        .HasFilter("\"ExternalOperationId\" IS NOT NULL");
 
                     b.HasIndex(new[] { "OrderId" }, "IX_Payments_OnePending")
                         .IsUnique()
@@ -796,9 +840,15 @@ namespace DominioDeLaSierra.Infrastructure.Persistence.Migrations
                         {
                             t.HasCheckConstraint("CK_Payments_Amount", "\"AmountCents\" >= 0");
 
-                            t.HasCheckConstraint("CK_Payments_CheckoutSession", "(\"CheckoutUrl\" IS NULL AND \"CheckoutExpiresAt\" IS NULL)\r\nOR (\"StripeCheckoutSessionId\" IS NOT NULL AND \"CheckoutUrl\" IS NOT NULL AND \"CheckoutExpiresAt\" IS NOT NULL)");
+                            t.HasCheckConstraint("CK_Payments_CheckoutSession", "(\"CheckoutUrl\" IS NULL AND \"CheckoutExpiresAt\" IS NULL)\r\nOR (\"Provider\" = 'Stripe' AND \"StripeCheckoutSessionId\" IS NOT NULL AND \"CheckoutUrl\" IS NOT NULL AND \"CheckoutExpiresAt\" IS NOT NULL AND \"RedsysOrderNumber\" IS NULL)\r\nOR (\"Provider\" = 'Redsys' AND \"ExternalOperationId\" IS NOT NULL AND \"RedsysOrderNumber\" IS NOT NULL AND \"CheckoutUrl\" IS NOT NULL AND \"CheckoutExpiresAt\" IS NOT NULL AND \"StripeCheckoutSessionId\" IS NULL AND \"StripePaymentIntentId\" IS NULL)\r\nOR (\"Provider\" = 'PayPal' AND \"ExternalOperationId\" IS NOT NULL AND \"RedsysOrderNumber\" IS NULL AND \"CheckoutUrl\" IS NOT NULL AND \"CheckoutExpiresAt\" IS NOT NULL AND \"StripeCheckoutSessionId\" IS NULL AND \"StripePaymentIntentId\" IS NULL)");
 
                             t.HasCheckConstraint("CK_Payments_Currency", "\"Currency\" = 'EUR'");
+
+                            t.HasCheckConstraint("CK_Payments_PayPalCreate", "(\"ExternalCreateOutcome\" IS NULL AND \"ExternalRequestId\" IS NULL AND \"ExternalRequestFingerprint\" IS NULL AND \"ExternalCreateAttemptedAt\" IS NULL)\r\nOR (\"Provider\" = 'PayPal' AND \"ExternalCreateOutcome\" IN ('Attempted', 'Uncertain') AND \"ExternalOperationId\" IS NULL AND \"ExternalRequestId\" IS NOT NULL AND \"ExternalRequestFingerprint\" IS NOT NULL AND \"ExternalCreateAttemptedAt\" IS NOT NULL)\r\nOR (\"Provider\" = 'PayPal' AND \"ExternalCreateOutcome\" = 'Identified' AND \"ExternalOperationId\" IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_Payments_Provider", "\"Provider\" IN ('Stripe', 'Redsys', 'PayPal')");
+
+                            t.HasCheckConstraint("CK_Payments_ProviderReferences", "(\"StripeCheckoutSessionId\" IS NULL OR \"Provider\" = 'Stripe')\r\nAND (\"StripePaymentIntentId\" IS NULL OR \"Provider\" = 'Stripe')\r\nAND (\"RedsysOrderNumber\" IS NULL OR (\"Provider\" = 'Redsys' AND \"RedsysOrderNumber\" ~ '^[0-9]{4,12}$'))");
 
                             t.HasCheckConstraint("CK_Payments_StatusTimes", "(\"Status\" = 'Pending' AND \"SucceededAt\" IS NULL AND \"FailedAt\" IS NULL AND \"CancelledAt\" IS NULL AND \"RefundedAt\" IS NULL)\r\nOR (\"Status\" = 'Succeeded' AND \"SucceededAt\" IS NOT NULL AND \"FailedAt\" IS NULL AND \"CancelledAt\" IS NULL AND \"RefundedAt\" IS NULL)\r\nOR (\"Status\" = 'Failed' AND \"FailedAt\" IS NOT NULL AND \"SucceededAt\" IS NULL AND \"CancelledAt\" IS NULL AND \"RefundedAt\" IS NULL)\r\nOR (\"Status\" = 'Cancelled' AND \"CancelledAt\" IS NOT NULL AND \"SucceededAt\" IS NULL AND \"FailedAt\" IS NULL AND \"RefundedAt\" IS NULL)\r\nOR (\"Status\" = 'Refunded' AND \"SucceededAt\" IS NOT NULL AND \"RefundedAt\" IS NOT NULL AND \"FailedAt\" IS NULL AND \"CancelledAt\" IS NULL)");
                         });
@@ -937,6 +987,139 @@ namespace DominioDeLaSierra.Infrastructure.Persistence.Migrations
                     b.ToTable("ProductComponents", null, t =>
                         {
                             t.HasCheckConstraint("CK_ProductComponents_Quantity", "\"Quantity\" > 0");
+                        });
+                });
+
+            modelBuilder.Entity("DominioDeLaSierra.Domain.Entities.ProviderReconciliation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Attention")
+                        .HasMaxLength(240)
+                        .HasColumnType("character varying(240)");
+
+                    b.Property<string>("Evidence")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("ExternalReference")
+                        .IsRequired()
+                        .HasMaxLength(36)
+                        .HasColumnType("character varying(36)");
+
+                    b.Property<DateTimeOffset>("LastAttemptAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("NextAttemptAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("PaymentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NextAttemptAt")
+                        .HasDatabaseName("IX_ProviderReconciliations_NextAttempt");
+
+                    b.HasIndex("OrderId");
+
+                    b.HasIndex("PaymentId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_ProviderReconciliations_Payment");
+
+                    b.ToTable("ProviderReconciliations", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_ProviderReconciliations_Attempt", "\"AttemptCount\" >= 1 AND \"NextAttemptAt\" >= \"LastAttemptAt\"");
+
+                            t.HasCheckConstraint("CK_ProviderReconciliations_Evidence", "\"Evidence\" IN ('Unknown', 'StillPayable', 'Paid', 'ClosedUnpaid', 'Unavailable')");
+
+                            t.HasCheckConstraint("CK_ProviderReconciliations_Provider", "\"Provider\" IN ('Redsys', 'PayPal')");
+
+                            t.HasCheckConstraint("CK_ProviderReconciliations_Reference", "\"ExternalReference\" ~ '^[A-Za-z0-9]{4,36}$'");
+                        });
+                });
+
+            modelBuilder.Entity("DominioDeLaSierra.Domain.Entities.ReservationHoldIncident", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<long>("AgeSeconds")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("AlertCount")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ExternalReference")
+                        .HasMaxLength(36)
+                        .HasColumnType("character varying(36)");
+
+                    b.Property<DateTimeOffset>("NextReviewAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("OpenedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Provider")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<string>("Reconciliation")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("Resolution")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTimeOffset?>("ResolvedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Severity")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrderId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_ReservationHoldIncidents_OpenOrder")
+                        .HasFilter("\"ResolvedAt\" IS NULL");
+
+                    b.ToTable("ReservationHoldIncidents", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_ReservationHoldIncidents_Age", "\"AgeSeconds\" >= 0 AND \"AlertCount\" >= 1 AND \"NextReviewAt\" >= \"OpenedAt\" AND \"UpdatedAt\" >= \"OpenedAt\"");
+
+                            t.HasCheckConstraint("CK_ReservationHoldIncidents_Provider", "\"Provider\" IS NULL OR \"Provider\" IN ('Stripe', 'Redsys', 'PayPal')");
+
+                            t.HasCheckConstraint("CK_ReservationHoldIncidents_Reference", "\"ExternalReference\" IS NULL OR \"ExternalReference\" ~ '^[A-Za-z0-9]{4,36}$'");
+
+                            t.HasCheckConstraint("CK_ReservationHoldIncidents_Resolution", "(\"ResolvedAt\" IS NULL AND \"Resolution\" IS NULL)\r\nOR (\"ResolvedAt\" IS NOT NULL AND \"ResolvedAt\" >= \"OpenedAt\" AND \"Resolution\" IN ('Verified', 'Administrative'))");
+
+                            t.HasCheckConstraint("CK_ReservationHoldIncidents_Severity", "(\"Severity\" = 'Held' AND \"Reconciliation\" = 'Holding')\r\nOR (\"Severity\" = 'Critical' AND \"Reconciliation\" = 'PaidUnsettled')");
                         });
                 });
 
@@ -1254,6 +1437,32 @@ namespace DominioDeLaSierra.Infrastructure.Persistence.Migrations
                     b.Navigation("ComponentProduct");
 
                     b.Navigation("PackProduct");
+                });
+
+            modelBuilder.Entity("DominioDeLaSierra.Domain.Entities.ProviderReconciliation", b =>
+                {
+                    b.HasOne("DominioDeLaSierra.Domain.Entities.Order", null)
+                        .WithMany()
+                        .HasForeignKey("OrderId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("DominioDeLaSierra.Domain.Entities.Payment", null)
+                        .WithMany()
+                        .HasForeignKey("PaymentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("DominioDeLaSierra.Domain.Entities.ReservationHoldIncident", b =>
+                {
+                    b.HasOne("DominioDeLaSierra.Domain.Entities.Order", "Order")
+                        .WithMany()
+                        .HasForeignKey("OrderId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Order");
                 });
 
             modelBuilder.Entity("DominioDeLaSierra.Domain.Entities.Stock", b =>

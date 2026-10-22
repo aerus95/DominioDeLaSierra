@@ -21,9 +21,9 @@ sealed class CheckoutSettlement(IOrderStock orderStock)
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        if (reservation.Status is StockReservationStatus.Reserved or StockReservationStatus.Confirming)
+        if (payment.Provider != PaymentProvider.Stripe)
         {
-            await orderStock.BeginPaymentConfirmationAsync(order.Id, now, cancellationToken);
+            throw new InvalidOperationException(PaymentProviderRules.NotStripeMessage);
         }
 
         if (payment.StripePaymentIntentId is null)
@@ -33,6 +33,21 @@ sealed class CheckoutSettlement(IOrderStock orderStock)
         else if (!string.Equals(payment.StripePaymentIntentId, paymentIntentId, StringComparison.Ordinal))
         {
             throw new InvalidOperationException(StripeWebhookRules.IntentMessage);
+        }
+
+        await ConfirmAuthorizedAsync(order, payment, reservation, now, cancellationToken);
+    }
+
+    public async Task ConfirmAuthorizedAsync(
+        Order order,
+        Payment payment,
+        StockReservation reservation,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (reservation.Status is StockReservationStatus.Reserved or StockReservationStatus.Confirming)
+        {
+            await orderStock.BeginPaymentConfirmationAsync(order.Id, now, cancellationToken);
         }
 
         order.MarkPaid(payment.Id, now);

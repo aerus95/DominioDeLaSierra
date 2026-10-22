@@ -91,6 +91,8 @@ public sealed class Order
         }
 
         var duration = reservationDuration ?? OrderAmounts.ReservationDuration;
+        // El tope de 24 horas es el máximo de una sesión de Stripe.
+        // Redsys reutiliza la reserva de stock y no inventa una caducidad del TPV.
         if (duration <= TimeSpan.Zero || duration > StripeCheckoutExpiry.Maximum)
         {
             throw new ArgumentOutOfRangeException(nameof(reservationDuration), "La duración de la reserva no es válida.");
@@ -149,12 +151,15 @@ public sealed class Order
                 vat = checked(vat + item.VatCents);
             }
 
-            var shipping = OrderAmounts.ShippingCentsForProductSubtotal(subtotal);
+            var shipping = ShippingTariff.For(subtotal, order.items.Select(item => item.VatRate));
             order.ProductSubtotalCents = subtotal;
             order.ProductTaxableBaseCents = taxableBase;
             order.ProductVatCents = vat;
-            order.ShippingCents = shipping;
-            order.TotalCents = checked(subtotal + shipping);
+            order.ShippingCents = shipping.GrossCents;
+            order.ShippingVatRate = shipping.VatRate;
+            order.ShippingTaxableBaseCents = shipping.TaxableBaseCents;
+            order.ShippingVatCents = shipping.VatCents;
+            order.TotalCents = checked(subtotal + shipping.GrossCents);
         }
         catch (OverflowException)
         {
@@ -195,15 +200,59 @@ public sealed class Order
 
     public Payment AddPayment(Guid paymentId, DateTimeOffset createdAt)
     {
+        return AddPayment(paymentId, createdAt, PaymentProvider.Stripe);
+    }
+
+    public Payment AddPayment(Guid paymentId, DateTimeOffset createdAt, PaymentProvider provider)
+    {
         EnsurePending();
         if (payments.Any(payment => payment.Status == PaymentStatus.Pending))
         {
             throw new InvalidOperationException("El pedido ya tiene un pago pendiente.");
         }
 
-        var payment = new Payment(paymentId, this, TotalCents, createdAt);
+        var payment = new Payment(paymentId, this, TotalCents, createdAt, provider);
         payments.Add(payment);
         return payment;
+    }
+
+    public void BeginPayPalCreate(Guid paymentId, string requestId, string fingerprint, DateTimeOffset at)
+    {
+        EnsurePending();
+        RequirePayment(paymentId).BeginPayPalCreate(requestId, fingerprint, at);
+    }
+
+    public void RememberPayPalOrder(Guid paymentId, string externalOperationId)
+    {
+        EnsurePending();
+        RequirePayment(paymentId).RememberPayPalOrder(externalOperationId);
+    }
+
+    public void AcceptVerifiedPayPalClosure(Guid paymentId)
+    {
+        RequirePayment(paymentId).AcceptVerifiedUnpaidClosure();
+    }
+
+    public void NotePayPalCreateUncertain(Guid paymentId)
+    {
+        RequirePayment(paymentId).NotePayPalCreateUncertain();
+    }
+
+    public void AttachPayPalApproval(Guid paymentId, string externalOperationId, string checkoutUrl, DateTimeOffset expiresAt)
+    {
+        EnsurePending();
+        RequirePayment(paymentId).AttachPayPalApproval(externalOperationId, checkoutUrl, expiresAt);
+    }
+
+    public void AssignExternalCheckout(
+        Guid paymentId,
+        string externalOperationId,
+        string checkoutUrl,
+        DateTimeOffset expiresAt,
+        string? redsysOrderNumber)
+    {
+        EnsurePending();
+        RequirePayment(paymentId).AssignExternalCheckout(externalOperationId, checkoutUrl, expiresAt, redsysOrderNumber);
     }
 
     public void AssignCheckoutSession(Guid paymentId, string sessionId)
@@ -222,6 +271,12 @@ public sealed class Order
     {
         EnsurePending();
         RequirePayment(paymentId).AssignPaymentIntent(paymentIntentId);
+    }
+
+    public void AssignCapture(Guid paymentId, string captureId)
+    {
+        EnsurePending();
+        RequirePayment(paymentId).AssignCapture(captureId);
     }
 
     public PaymentEvent RecordPaymentEvent(
@@ -297,6 +352,7 @@ public sealed class Order
     public void Cancel(DateTimeOffset at)
     {
         EnsurePending();
+        EnsureExternalHoldAllowsClosure();
         CancelPendingPayments(at);
         Status = OrderStatus.Cancelled;
         CancelledAt = at;
@@ -366,9 +422,18 @@ public sealed class Order
             throw new InvalidOperationException("La reserva todavía no ha caducado.");
         }
 
+        EnsureExternalHoldAllowsClosure();
         CancelPendingPayments(at);
         Status = OrderStatus.Expired;
         ExpiredAt = at;
+    }
+
+    private void EnsureExternalHoldAllowsClosure()
+    {
+        if (payments.Any(payment => payment.BlocksAutomaticRelease()))
+        {
+            throw new InvalidOperationException(ExternalHoldRules.UncertainHoldMessage);
+        }
     }
 
     private void CancelPendingPayments(DateTimeOffset at)

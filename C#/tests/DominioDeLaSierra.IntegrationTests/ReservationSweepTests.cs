@@ -365,7 +365,8 @@ public sealed class ReservationSweepTests(PostgresFixture fixture) : DatabaseTes
             "Calle Mayor 1",
             "Salamanca",
             "Salamanca",
-            null);
+            null,
+            "Stripe");
     }
 
     private async Task AgeAsync(Guid orderId, TimeSpan past)
@@ -383,7 +384,7 @@ public sealed class ReservationSweepTests(PostgresFixture fixture) : DatabaseTes
         await using var scope = Fixture.Factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         await db.Database.ExecuteSqlInterpolatedAsync(
-            $"""UPDATE "Payments" SET "StripeCheckoutSessionId" = NULL, "CheckoutUrl" = NULL, "CheckoutExpiresAt" = NULL WHERE "OrderId" = {orderId}""");
+            $"""UPDATE "Payments" SET "StripeCheckoutSessionId" = NULL, "ExternalOperationId" = NULL, "CheckoutUrl" = NULL, "CheckoutExpiresAt" = NULL WHERE "OrderId" = {orderId}""");
     }
 
     private static StripeSessionInspection Paid(ReadyOrder order, string? sessionId = null)

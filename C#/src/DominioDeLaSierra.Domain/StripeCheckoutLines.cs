@@ -4,8 +4,7 @@ namespace DominioDeLaSierra.Domain;
 
 /// <summary>
 /// Líneas que se cobran en Stripe. El importe sale del pedido persistido.
-/// El envío entra como bruto de 8,00 € o no entra. No se envía un tipo impositivo:
-/// el IVA del transporte sigue pendiente y no se asume un 21 %.
+/// El envío entra por su bruto ya calculado, base más IVA, o no entra si es gratuito.
 /// </summary>
 public static class StripeCheckoutLines
 {

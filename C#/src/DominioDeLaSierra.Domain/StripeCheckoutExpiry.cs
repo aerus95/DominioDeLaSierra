@@ -6,6 +6,7 @@ namespace DominioDeLaSierra.Domain;
 /// y la reserva tiene que existir antes de esa llamada. Por eso las dos caducidades no pueden ser iguales:
 /// la sesión pide 30 minutos más un margen de creación, y la reserva termina después, con una cola de reconciliación.
 /// Ninguno de los dos márgenes alarga el tiempo de compra anterior al pago ni se renueva en cada reintento.
+/// Estos plazos son solo de Stripe. Redsys y PayPal no los reutilizan.
 /// </summary>
 public static class StripeCheckoutExpiry
 {

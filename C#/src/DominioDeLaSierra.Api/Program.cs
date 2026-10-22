@@ -109,6 +109,8 @@ OrderNotificationDeliveryGuard.Ensure(
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.Configure<ReservationSweepOptions>(builder.Configuration.GetSection(ReservationSweepOptions.SectionName));
 builder.Services.AddHostedService<ReservationSweepWorker>();
+builder.Services.AddHostedService<ReservationHoldAlertWorker>();
+builder.Services.AddHostedService<ProviderReconciliationWorker>();
 builder.Services.AddHostedService<OrderNotificationWorker>();
 
 builder.Services.AddCors(options =>
@@ -116,7 +118,8 @@ builder.Services.AddCors(options =>
     options.AddPolicy("Frontend", policy =>
         policy.WithOrigins("http://localhost:4200", "http://127.0.0.1:4200")
             .AllowAnyHeader()
-            .AllowAnyMethod());
+            .AllowAnyMethod()
+            .AllowCredentials());
 });
 
 builder.Services.AddRateLimiter(options =>
@@ -139,9 +142,27 @@ builder.Services.AddRateLimiter(options =>
                 Window = TimeSpan.FromMinutes(1),
                 QueueLimit = 0
             }));
+    options.AddPolicy("redsys-notification", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            httpContext.Connection.RemoteIpAddress?.ToString() ?? "redsys-notification",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = testing ? 10_000 : 120,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0
+            }));
     options.AddPolicy("stripe-webhook", httpContext =>
         RateLimitPartition.GetFixedWindowLimiter(
             httpContext.Connection.RemoteIpAddress?.ToString() ?? "stripe-webhook",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = testing ? 10_000 : 120,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0
+            }));
+    options.AddPolicy("paypal-webhook", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            httpContext.Connection.RemoteIpAddress?.ToString() ?? "paypal-webhook",
             _ => new FixedWindowRateLimiterOptions
             {
                 PermitLimit = testing ? 10_000 : 120,

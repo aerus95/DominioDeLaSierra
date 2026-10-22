@@ -67,6 +67,7 @@ public static class InvoiceIssuanceRules
     public const string LiveFictionalMessage = "Una clave live de Stripe no puede convivir con la marca de documento ficticio.";
     public const string StripeTestFiscalMessage = "No se puede emitir una factura fiscal mientras Stripe está en modo de pruebas.";
     public const string LivePaymentRequiredMessage = "El pedido no tiene un cobro de Stripe en modo live.";
+    public const string UnspecifiedProviderMessage = "La facturación de este proveedor de pago no está definida.";
     public const string MixedStripeMessage = "El pedido tiene un cobro live y Stripe está en modo de pruebas.";
     public const string InvoiceFormMessage = FiscalDocumentFormRules.UndeterminedMessage;
     public const string FictionalSellerMessage = "El emisor configurado es ficticio y no puede emitir una factura fiscal.";

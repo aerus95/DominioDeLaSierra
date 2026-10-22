@@ -1,0 +1,154 @@
+@page "/admin/payments/reconciliation"
+@using DominioDeLaSierra.Api.Pages.Admin.Orders
+@model DominioDeLaSierra.Api.Pages.Admin.Payments.ReconciliationModel
+@{
+    ViewData["Title"] = "Conciliación";
+}
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Conciliación · Dominio de la Sierra</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=ds-signature-4">
+    <style>
+        :root { --wine:#421f25; --ink:#1d1917; --paper:#faf8f4; --cream:#f2ede4; --gold:#bd9560; --line:rgba(29,25,23,.14); --ok:#2f6b4f; --err:#8b2e35; }
+        * { box-sizing: border-box; }
+        body { margin: 0; background: var(--paper); color: var(--ink); font: 15px/1.5 Calibri, Segoe UI, sans-serif; }
+        header.page { background: var(--wine); color: #faf7f1; padding: 28px 32px; }
+        header.page p { margin: 0 0 6px; letter-spacing: .18em; text-transform: uppercase; font-size: 11px; color: var(--gold); }
+        header.page h1 { margin: 0; font-weight: 500; font-size: 28px; }
+        header.page small { display: block; margin-top: 8px; opacity: .75; }
+        header.page a { color: #e8d7b8; }
+        .wrap { padding: 28px 32px 48px; }
+        .flash { padding: 12px 14px; border-radius: 8px; margin-bottom: 18px; }
+        .flash.ok { background: #e7f3ea; color: var(--ok); }
+        .flash.err { background: #f8e8e9; color: var(--err); }
+        section.card { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 20px; margin-bottom: 22px; }
+        h2 { margin: 0 0 14px; font-size: 18px; color: var(--wine); }
+        .muted { color: #6d6560; }
+        .table-scroll { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+        th { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: #6d6560; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; background: var(--cream); }
+        .badge.critical { background: #f8e8e9; color: var(--err); }
+        .badge.held { background: #f3ead7; color: #6a4b16; }
+        button { background: var(--wine); color: #fff; border: 0; border-radius: 999px; padding: 8px 14px; font: 600 13px inherit; cursor: pointer; }
+        code { font-family: Consolas, monospace; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <partial name="~/Pages/Admin/_AdminHeader.cshtml" />
+    <header class="page">
+        <p>Dominio de la Sierra · Administración</p>
+        <h1>Conciliación</h1>
+        <small>Operaciones pendientes de Redsys TEST y PayPal Sandbox. <a href="/admin/orders">Volver a pedidos</a></small>
+    </header>
+    <div class="wrap">
+        @if (!string.IsNullOrWhiteSpace(Model.StatusMessage))
+        {
+            <div class="flash ok">@Model.StatusMessage</div>
+        }
+        @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+        {
+            <div class="flash err">@Model.ErrorMessage</div>
+        }
+        <section class="card">
+            <h2>Pendientes</h2>
+            <p class="muted">Una reserva no se libera por el tiempo transcurrido y un pago no se marca como cobrado sin evidencia del proveedor. Redsys no tiene consulta automática: el número de operación, el importe, la moneda y la fecha sirven para revisar el portal de pruebas del banco.</p>
+            @if (Model.Rows.Count == 0)
+            {
+                <p class="muted">No hay operaciones pendientes de Redsys ni de PayPal.</p>
+            }
+            else
+            {
+                <div class="table-scroll">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Pedido</th>
+                                <th>Proveedor</th>
+                                <th>Referencia</th>
+                                <th>Importe</th>
+                                <th>Reserva</th>
+                                <th>Conciliación</th>
+                                <th>Incidencia</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in Model.Rows)
+                            {
+                                <tr>
+                                    <td><a href="/admin/orders/@row.OrderId">@row.OrderNumber</a></td>
+                                    <td>@row.Provider</td>
+                                    <td><code>@row.ExternalReference</code></td>
+                                    <td>@OrderPresentation.Money(row.AmountCents) @row.Currency</td>
+                                    <td>
+                                        @OrderPresentation.When(row.ReservedAt)
+                                        <div class="muted">@Age(row.AgeSeconds)</div>
+                                    </td>
+                                    <td>
+                                        @row.Evidence
+                                        <div class="muted">Intentos: @row.AttemptCount</div>
+                                        @if (row.LastAttemptAt is { } last)
+                                        {
+                                            <div class="muted">Último: @OrderPresentation.When(last)</div>
+                                        }
+                                        @if (row.NextAttemptAt is { } next)
+                                        {
+                                            <div class="muted">Siguiente: @OrderPresentation.When(next)</div>
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(row.Attention))
+                                        {
+                                            <div class="muted">@row.Attention</div>
+                                        }
+                                    </td>
+                                    <td>
+                                        @if (row.IncidentSeverity is null)
+                                        {
+                                            <span class="muted">—</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge @(row.IncidentSeverity == "Critical" ? "critical" : "held")">@row.IncidentSeverity · @row.IncidentReconciliation</span>
+                                        }
+                                    </td>
+                                    <td>
+                                        @if (Model.CanRecheck && row.CanRecheck)
+                                        {
+                                            <form method="post" asp-page-handler="Recheck" asp-route-orderId="@row.OrderId">
+                                                @Html.AntiForgeryToken()
+                                                <button type="submit">Comprobar PayPal</button>
+                                            </form>
+                                        }
+                                        else if (row.Provider == "Redsys")
+                                        {
+                                            <span class="muted">Consulta en el portal del banco</span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+    </div>
+</body>
+</html>
+
+@functions {
+    private static string Age(long seconds)
+    {
+        if (seconds < 60)
+        {
+            return seconds + " s";
+        }
+
+        var hours = seconds / 3600;
+        var minutes = (seconds % 3600) / 60;
+        return hours > 0 ? hours + " h " + minutes + " min" : minutes + " min";
+    }
+}

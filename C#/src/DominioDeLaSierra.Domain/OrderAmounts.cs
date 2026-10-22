@@ -3,14 +3,13 @@ namespace DominioDeLaSierra.Domain;
 /// <summary>
 /// Importes de pedido en céntimos. Product.Price es PVP con IVA incluido.
 /// La base y la cuota de los productos salen de ese bruto y del tipo guardado en cada línea.
-/// El IVA del envío no se asume: queda vacío hasta que el checkout lo defina.
+/// El porte sale de ShippingTariff: 6,00 € de base más el tipo de las líneas, o 0 € desde 60,00 €.
 /// </summary>
 public static class OrderAmounts
 {
     public const string Currency = "EUR";
     public const string CountryCode = "ES";
-    public const long FreeShippingThresholdCents = 10_000;
-    public const long FlatShippingCents = 800;
+    public const long FreeShippingThresholdCents = ShippingTariff.FreeProductSubtotalCents;
     public const int MaxLineQuantity = 1_000_000;
     public const decimal MaxVatRate = 999.99m;
 
@@ -25,18 +24,6 @@ public static class OrderAmounts
 
         var cents = decimal.Round(price * 100m, 0, MidpointRounding.AwayFromZero);
         return (long)cents;
-    }
-
-    public static long ShippingCentsForProductSubtotal(long productSubtotalCents)
-    {
-        if (productSubtotalCents < 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(productSubtotalCents), "El subtotal no es válido.");
-        }
-
-        return productSubtotalCents < FreeShippingThresholdCents
-            ? FlatShippingCents
-            : 0;
     }
 
     public static (long TaxableBaseCents, long VatCents) SplitGross(long grossCents, decimal vatRate)

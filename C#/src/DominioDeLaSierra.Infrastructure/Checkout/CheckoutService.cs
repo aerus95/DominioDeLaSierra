@@ -392,6 +392,8 @@ public sealed class CheckoutService(ApplicationDbContext dbContext, IOrderStock 
             order.ProductVatCents,
             order.ShippingCents,
             order.ShippingVatRate,
+            order.ShippingTaxableBaseCents,
+            order.ShippingVatCents,
             order.TotalCents,
             order.Currency,
             order.ShippingVatRate is null);
@@ -407,6 +409,8 @@ public sealed class CheckoutService(ApplicationDbContext dbContext, IOrderStock 
             order.ProductVatCents,
             order.ShippingCents,
             order.ShippingVatRate,
+            order.ShippingTaxableBaseCents,
+            order.ShippingVatCents,
             order.TotalCents,
             order.Currency,
             order.ReservationExpiresAt,

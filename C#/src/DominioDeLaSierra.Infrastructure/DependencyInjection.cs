@@ -14,6 +14,7 @@ using DominioDeLaSierra.Infrastructure.Categories;
 using DominioDeLaSierra.Infrastructure.Persistence;
 using DominioDeLaSierra.Infrastructure.Products;
 using DominioDeLaSierra.Application.Checkout;
+using DominioDeLaSierra.Domain;
 using DominioDeLaSierra.Application.Inventory;
 using DominioDeLaSierra.Application.Invoicing;
 using DominioDeLaSierra.Infrastructure.Checkout;
@@ -22,6 +23,7 @@ using DominioDeLaSierra.Infrastructure.Invoicing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
 namespace DominioDeLaSierra.Infrastructure;
@@ -53,11 +55,36 @@ public static class DependencyInjection
         services.AddScoped<IImportProducts, ImportProductsService>();
         services.AddScoped<IOrderStock, OrderStockService>();
         services.AddScoped<ICheckout, CheckoutService>();
+        services.AddScoped(provider => RedsysSettings.Read(provider.GetRequiredService<IConfiguration>()));
+        services.AddScoped<RedsysPaymentStarter>();
+        services.AddSingleton<RedsysNotificationFailureProbe>();
+        services.AddScoped<IRedsysNotifications, RedsysNotificationService>();
+        services.AddScoped(provider => PayPalSettings.Read(provider.GetRequiredService<IConfiguration>()));
+        services.AddSingleton<PayPalOrderScript>();
+        services.AddHttpClient<PayPalSandboxClient>(client =>
+        {
+            client.BaseAddress = new Uri(PayPalRules.SandboxApiRoot);
+            client.Timeout = TimeSpan.FromSeconds(20);
+        }).ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false });
+        services.AddScoped<IPayPalOrders>(SelectPayPalOrders);
+        services.AddScoped<IPayPalCertificates>(SelectPayPalCertificates);
+        services.AddScoped<PayPalPaymentStarter>();
+        services.AddScoped<PayPalCheckoutService>();
+        services.AddScoped<IPayPalCaptures>(provider => provider.GetRequiredService<PayPalCheckoutService>());
+        services.AddScoped<IPayPalWebhooks>(provider => provider.GetRequiredService<PayPalCheckoutService>());
+        services.AddScoped<IPayPalObservations>(provider => provider.GetRequiredService<PayPalCheckoutService>());
+        services.AddSingleton<IPaymentProviders, PaymentProviderCatalog>();
+        services.AddSingleton<IPaymentStatusQuery>(new UnconfiguredPaymentStatusQuery(PaymentProvider.Redsys));
+        services.AddScoped<IPaymentStatusQuery, PayPalPaymentStatusQuery>();
+        services.AddScoped<IRedsysOperationNumbers, RedsysOperationNumberAllocator>();
         services.AddScoped<IOrderPaymentSessions, OrderPaymentSessionService>();
         services.AddScoped<ICheckoutOutcome, CheckoutOutcomeService>();
         services.AddScoped<IStripeWebhookParser, StripeWebhookParser>();
         services.AddScoped<IStripeWebhooks, StripeWebhookService>();
         services.AddScoped<IReservationSweep, ReservationSweepService>();
+        services.AddScoped<IReservationHoldAlerts, ReservationHoldAlertService>();
+        services.AddScoped<ReservationHoldIncidentRecorder>();
+        services.AddScoped<IProviderPaymentReconciliation, ProviderPaymentReconciliationService>();
         services.AddScoped<IOrderPaymentReconciliation, OrderPaymentReconciliationService>();
         services.AddScoped<IOrderHoldRelease, OrderHoldReleaseService>();
         services.Configure<OrderNotificationOptions>(configuration.GetSection(OrderNotificationOptions.SectionName));
@@ -85,5 +112,26 @@ public static class DependencyInjection
         }
 
         return services;
+    }
+
+    private static IPayPalOrders SelectPayPalOrders(IServiceProvider provider)
+    {
+        return PayPalScript(provider)
+            ? provider.GetRequiredService<PayPalOrderScript>()
+            : provider.GetRequiredService<PayPalSandboxClient>();
+    }
+
+    private static IPayPalCertificates SelectPayPalCertificates(IServiceProvider provider)
+    {
+        return PayPalScript(provider)
+            ? provider.GetRequiredService<PayPalOrderScript>()
+            : provider.GetRequiredService<PayPalSandboxClient>();
+    }
+
+    private static bool PayPalScript(IServiceProvider provider)
+    {
+        var environment = provider.GetRequiredService<IHostEnvironment>();
+        var configuration = provider.GetRequiredService<IConfiguration>();
+        return PayPalProtocol.UseScript(environment.EnvironmentName, configuration["PayPal:Gateway"]);
     }
 }

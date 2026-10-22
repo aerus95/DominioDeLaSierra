@@ -77,10 +77,17 @@ public sealed class OrderPersistenceTests(PostgresFixture fixture) : DatabaseTes
         Assert.Equal(2, Assert.Single(storedPack.Components).QuantityPerPack);
         Assert.Equal("Componente guardado", Assert.Single(storedPack.Components).Name);
         Assert.Equal(7_290, stored.ProductSubtotalCents);
-        Assert.Equal(800, stored.ShippingCents);
-        Assert.Equal(8_090, stored.TotalCents);
+        Assert.Equal(0, stored.ShippingCents);
+        Assert.Equal(21m, stored.ShippingVatRate);
+        Assert.Equal(0, stored.ShippingTaxableBaseCents);
+        Assert.Equal(0, stored.ShippingVatCents);
+        Assert.Equal(7_290, stored.TotalCents);
         Assert.Equal(createdAt.AddMinutes(30), stored.ReservationExpiresAt);
-        Assert.Equal("cs_test_persist", Assert.Single(stored.Payments).StripeCheckoutSessionId);
+        var storedPayment = Assert.Single(stored.Payments);
+        Assert.Equal(PaymentProvider.Stripe, storedPayment.Provider);
+        Assert.Equal("cs_test_persist", storedPayment.StripeCheckoutSessionId);
+        Assert.Equal("cs_test_persist", storedPayment.ExternalOperationId);
+        Assert.Equal("cs_test_persist", storedPayment.ReconciliationReference());
         Assert.Equal("evt_test_persist", Assert.Single(Assert.Single(stored.Payments).Events).ExternalEventId);
     }
 

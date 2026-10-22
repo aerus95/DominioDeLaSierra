@@ -15,6 +15,7 @@ import {
   paymentSessionPayload,
   placePayload,
   quotePayload,
+  selectablePaymentProviders,
   CHECKOUT_CANCEL_PATH,
   CHECKOUT_CONFIRMED_MESSAGE,
   CHECKOUT_INCOMPLETE_MESSAGE,
@@ -26,6 +27,11 @@ import {
   checkoutOutcomePayload,
   checkoutOutcomeView,
   nextCheckoutPoll,
+  paymentRedirect,
+  paypalReturnShouldCapture,
+  paypalSandboxCheckoutUrl,
+  paymentButtonLabel,
+  providerSent,
   readCheckoutAccess,
   readCurrentCheckout,
   forgetIdempotencyKey,
@@ -57,7 +63,9 @@ describe('disponibilidad del checkout', () => {
     assert.equal(checkoutAllowedByServer(null), false);
     assert.equal(CHECKOUT_UNAVAILABLE_MESSAGE, 'La compra online estará disponible próximamente');
     assert.equal(checkoutUsesPanelCookie(''), true);
-    assert.equal(checkoutUsesPanelCookie('http://localhost:5141'), false);
+    assert.equal(checkoutUsesPanelCookie('http://localhost:5141'), true);
+    assert.equal(checkoutUsesPanelCookie('http://127.0.0.1:5141'), true);
+    assert.equal(checkoutUsesPanelCookie('https://api.example.com'), false);
   });
 });
 
@@ -74,10 +82,10 @@ describe('presupuesto del checkout', () => {
     assert.equal('price' in payload.lines[0], false);
   });
 
-  it('mantiene el umbral de envío gratuito en 100 euros', () => {
-    assert.equal(FREE_SHIPPING_EUROS, 100);
-    assert.equal(eurosFromCents(800), 8);
-    assert.equal(eurosFromCents(10_000), 100);
+  it('mantiene el umbral de envío gratuito en 60 euros', () => {
+    assert.equal(FREE_SHIPPING_EUROS, 60);
+    assert.equal(eurosFromCents(600), 6);
+    assert.equal(eurosFromCents(6_000), 60);
   });
 
   it('reutiliza la clave de idempotencia para el mismo pedido', () => {
@@ -190,5 +198,58 @@ describe('presupuesto del checkout', () => {
     rememberCurrentCheckout(orderId, null, storage);
     assert.deepEqual(readCurrentCheckout(storage), { orderId, token: 'token-opaco-de-acceso-1' });
     assert.equal(readCurrentCheckout(storage)?.token.includes('sk_'), false);
+  });
+
+  it('solo deja elegir proveedores anunciados y no los envía si no hay selección', () => {
+    assert.deepEqual(
+      selectablePaymentProviders([
+        { code: 'Stripe', displayName: 'Stripe' },
+        { code: 'Redsys', displayName: 'Redsys' },
+        { code: 'Bizum', displayName: 'Bizum' },
+        { code: 'PayPal', displayName: '   ' }
+      ]).map((offer) => offer.code),
+      ['Stripe', 'Redsys']
+    );
+    assert.deepEqual(selectablePaymentProviders(null), []);
+    const payload = placePayload(customer, [{ productId: 'wine', quantity: 1 }]);
+    assert.equal('paymentProvider' in payload, false);
+    assert.equal(placePayload(customer, [{ productId: 'wine', quantity: 1 }], 'Stripe').paymentProvider, 'Stripe');
+    assert.equal(providerSent('Redsys'), 'Redsys');
+    assert.equal(providerSent('PayPal'), 'PayPal');
+    assert.equal(providerSent('Stripe'), 'Stripe');
+    assert.equal(providerSent(null), undefined);
+    assert.equal(providerSent('Bizum'), undefined);
+    assert.equal(paymentButtonLabel('PayPal'), 'Pagar con PayPal');
+    assert.equal(paymentButtonLabel('Redsys'), 'Pagar con tarjeta');
+    assert.equal(paymentButtonLabel('Stripe'), 'Pagar con Stripe');
+    assert.equal(paymentButtonLabel(null), 'El pago no está disponible');
+    assert.equal(paypalReturnShouldCapture('checkout/exito'), true);
+    assert.equal(paypalReturnShouldCapture('checkout/cancelado'), false);
+    assert.equal(paypalSandboxCheckoutUrl('https://www.paypal.com/checkoutnow?token=1'), null);
+    const fields = {
+      Ds_SignatureVersion: 'HMAC_SHA512_V2',
+      Ds_MerchantParameters: 'parametros',
+      Ds_Signature: 'firma'
+    };
+    assert.deepEqual(paymentRedirect({
+      checkoutUrl: 'https://sis-t.redsys.es:25443/sis/realizarPago',
+      redirectMethod: 'POST',
+      redirectFields: fields
+    }), { method: 'post', url: 'https://sis-t.redsys.es:25443/sis/realizarPago', fields });
+    assert.equal(paymentRedirect({
+      checkoutUrl: 'https://sis.redsys.es/sis/realizarPago',
+      redirectMethod: 'POST',
+      redirectFields: fields
+    }), null);
+    assert.deepEqual(paymentRedirect({
+      checkoutUrl: 'https://www.sandbox.paypal.com/checkoutnow?token=5O190127TN364715T',
+      redirectMethod: 'GET',
+      provider: 'PayPal'
+    }), { method: 'get', url: 'https://www.sandbox.paypal.com/checkoutnow?token=5O190127TN364715T' });
+    assert.equal(paymentRedirect({
+      checkoutUrl: 'https://www.paypal.com/checkoutnow?token=LIVE',
+      redirectMethod: 'GET',
+      provider: 'PayPal'
+    }), null);
   });
 });

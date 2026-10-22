@@ -230,7 +230,8 @@ public sealed class StripeWebhookTests(PostgresFixture fixture) : DatabaseTest(f
                 "Calle Mayor 1",
                 "Salamanca",
                 "Salamanca",
-                null))
+                null,
+                "Stripe"))
         };
         request.Headers.TryAddWithoutValidation("Idempotency-Key", key + "-" + Guid.NewGuid().ToString("N"));
         var response = await client.SendAsync(request);

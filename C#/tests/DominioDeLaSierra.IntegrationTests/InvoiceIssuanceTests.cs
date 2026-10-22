@@ -234,10 +234,11 @@ public sealed class InvoiceIssuanceTests(PostgresFixture fixture) : DatabaseTest
         Assert.Equal("ficticio-F2026-000001.pdf", file.FileName);
         Assert.Contains(Invoice.TestBanner, file.Text);
         Assert.Contains(Invoice.MissingTaxIdClarification, file.Text);
-        Assert.Contains(Invoice.UndeterminedShippingClarification, file.Text);
+        Assert.Contains("16,26 EUR", file.Text);
+        Assert.Contains("7,26 EUR", file.Text);
+        Assert.DoesNotContain(Invoice.UndeterminedShippingClarification, file.Text);
         Assert.Contains(TestDocumentIssuer.LegalName, file.Text);
         Assert.Contains(TestDocumentIssuer.TaxId, file.Text);
-        Assert.Contains("17,00 EUR", file.Text);
         Assert.DoesNotContain("Factura simplificada", file.Text);
 
         await using var scope = Fixture.Factory.Services.CreateAsyncScope();
@@ -245,14 +246,18 @@ public sealed class InvoiceIssuanceTests(PostgresFixture fixture) : DatabaseTest
         var order = await db.Orders.AsNoTracking().SingleAsync(item => item.Id == orderId);
         var invoice = await db.Invoices.AsNoTracking().SingleAsync();
         Assert.Equal(900, order.ProductSubtotalCents);
-        Assert.Equal(800, order.ShippingCents);
-        Assert.Equal(1700, order.TotalCents);
+        Assert.Equal(726, order.ShippingCents);
+        Assert.Equal(600, order.ShippingTaxableBaseCents);
+        Assert.Equal(126, order.ShippingVatCents);
+        Assert.Equal(21m, order.ShippingVatRate);
+        Assert.Equal(1_626, order.TotalCents);
         Assert.Null(order.CustomerTaxId);
-        Assert.Null(order.ShippingVatRate);
         Assert.True(invoice.Fictional);
         Assert.Equal(FiscalDocumentForm.NotApplicable, invoice.FiscalForm);
         Assert.Null(invoice.BuyerTaxId);
-        Assert.Null(invoice.ShippingVatRate);
+        Assert.Equal(21m, invoice.ShippingVatRate);
+        Assert.Equal(600, invoice.ShippingTaxableBaseCents);
+        Assert.Equal(126, invoice.ShippingVatCents);
         Assert.Equal(TestDocumentIssuer.TaxId, invoice.SellerTaxId);
         Assert.Equal("F2026-000001", invoice.FullNumber);
     }
@@ -354,10 +359,10 @@ public sealed class InvoiceIssuanceTests(PostgresFixture fixture) : DatabaseTest
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         db.Orders.Add(order);
         await db.SaveChangesAsync();
-        Assert.Equal(1700, order.TotalCents);
-        Assert.Equal(800, order.ShippingCents);
+        Assert.Equal(1_626, order.TotalCents);
+        Assert.Equal(726, order.ShippingCents);
+        Assert.Equal(21m, order.ShippingVatRate);
         Assert.Null(order.CustomerTaxId);
-        Assert.Null(order.ShippingVatRate);
         return order.Id;
     }
 
@@ -372,7 +377,22 @@ public sealed class InvoiceIssuanceTests(PostgresFixture fixture) : DatabaseTest
         var categoryId = await harness.CreateCategoryAsync();
         var product = await harness.CreateProductAsync(categoryId, "INV-" + Guid.NewGuid().ToString("N")[..8], ProductKind.Wine, vintage: "2024");
         var createdAt = new DateTimeOffset(2026, 10, 11, 18, 0, 0, TimeSpan.Zero);
-        var cents = OrderAmounts.PriceToCents(product.Price);
+        IReadOnlyList<OrderLine> lines;
+        if (shippingVat is null)
+        {
+            var other = await harness.CreateProductAsync(categoryId, "INV-" + Guid.NewGuid().ToString("N")[..8], ProductKind.Standard);
+            lines =
+            [
+                new OrderLine(product.Id, "Vino de prueba", product.Reference, ProductKind.Wine, 1, 4_000, 21m, null),
+                new OrderLine(other.Id, "Otro producto", other.Reference, ProductKind.Standard, 1, 2_500, 10m, null)
+            ];
+        }
+        else
+        {
+            var cents = OrderAmounts.PriceToCents(product.Price);
+            lines = [new OrderLine(product.Id, "Vino de prueba", product.Reference, ProductKind.Wine, 1, cents, product.VatRate, null)];
+        }
+
         var order = Order.CreatePending(
             Guid.NewGuid(),
             "DS-TEST-" + Guid.NewGuid().ToString("N")[..8],
@@ -385,14 +405,14 @@ public sealed class InvoiceIssuanceTests(PostgresFixture fixture) : DatabaseTest
             "Avila",
             "Salamanca",
             null,
-            [new OrderLine(product.Id, "Vino de prueba", product.Reference, ProductKind.Wine, 1, cents, product.VatRate, null)],
+            lines,
             createdAt);
         if (taxId is not null)
         {
             order.AssignCustomerTaxId(taxId);
         }
 
-        if (shippingVat is not null)
+        if (shippingVat is not null && order.ShippingVatRate is null)
         {
             order.DefineShippingVat(shippingVat.Value);
         }

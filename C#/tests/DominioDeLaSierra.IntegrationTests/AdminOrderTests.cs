@@ -76,7 +76,7 @@ public sealed class AdminOrderTests(PostgresFixture fixture) : DatabaseTest(fixt
     }
 
     [Fact]
-    public async Task Shows_the_pack_snapshot_payment_incident_and_pending_shipping_vat()
+    public async Task Shows_the_pack_snapshot_payment_incident_and_shipping_vat()
     {
         await TestCatalog.SeedAsync();
         var harness = new CatalogHarness(Fixture.Factory.Services);
@@ -143,7 +143,7 @@ public sealed class AdminOrderTests(PostgresFixture fixture) : DatabaseTest(fixt
         Assert.Contains("Componente guardado", html, StringComparison.Ordinal);
         Assert.Contains("2 por pack", html, StringComparison.Ordinal);
         Assert.DoesNotContain("Nombre vivo del catálogo", html, StringComparison.Ordinal);
-        Assert.Contains("Pendiente", html, StringComparison.Ordinal);
+        Assert.Contains("1,26", html, StringComparison.Ordinal);
         Assert.Contains("El importe no coincide.", html, StringComparison.Ordinal);
         Assert.DoesNotContain("cs_test_admin_detail", html, StringComparison.Ordinal);
         Assert.DoesNotContain("secret-session", html, StringComparison.Ordinal);

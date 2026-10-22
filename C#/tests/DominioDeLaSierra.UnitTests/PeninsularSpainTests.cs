@@ -50,11 +50,11 @@ public class PeninsularSpainTests
     }
 
     [Fact]
-    public void Converts_the_shelf_price_to_cents_without_assuming_shipping_vat()
+    public void Converts_the_shelf_price_to_cents_and_prices_shipping_from_the_product_rate()
     {
         Assert.Equal(1_890, OrderAmounts.PriceToCents(18.90m));
-        Assert.Equal(10_000, OrderAmounts.PriceToCents(100m));
-        Assert.Null(Order.CreatePending(
+        Assert.Equal(6_000, OrderAmounts.PriceToCents(60m));
+        var order = Order.CreatePending(
             Guid.NewGuid(),
             "DS-VAT",
             "vat-key",
@@ -67,6 +67,11 @@ public class PeninsularSpainTests
             "Salamanca",
             null,
             [new OrderLine(Guid.NewGuid(), "Vino", "VINO", ProductKind.Wine, 1, 1_890, 21m, null)],
-            new DateTimeOffset(2026, 10, 9, 12, 0, 0, TimeSpan.Zero)).ShippingVatRate);
+            new DateTimeOffset(2026, 10, 9, 12, 0, 0, TimeSpan.Zero));
+
+        Assert.Equal(21m, order.ShippingVatRate);
+        Assert.Equal(600, order.ShippingTaxableBaseCents);
+        Assert.Equal(126, order.ShippingVatCents);
+        Assert.Equal(2_616, order.TotalCents);
     }
 }

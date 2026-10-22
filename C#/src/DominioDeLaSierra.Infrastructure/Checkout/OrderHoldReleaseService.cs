@@ -1,6 +1,7 @@
 using System.Data;
 using DominioDeLaSierra.Application.Checkout;
 using DominioDeLaSierra.Application.Inventory;
+using DominioDeLaSierra.Domain;
 using DominioDeLaSierra.Domain.Entities;
 using DominioDeLaSierra.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -94,6 +95,12 @@ public sealed class OrderHoldReleaseService(
             return Map(verdict);
         }
 
+        if (current.Payments.Any(item => item.BlocksAutomaticRelease()))
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return Refused(ExternalHoldRules.UncertainHoldMessage);
+        }
+
         if (verdict.Decision == OrderHoldReleaseDecision.Release)
         {
             await orderStock.ReleaseAsync(orderId, now, cancellationToken);
@@ -110,6 +117,7 @@ public sealed class OrderHoldReleaseService(
     {
         return await dbContext.Orders
             .Include(order => order.Payments)
+            .ThenInclude(payment => payment.Events)
             .Include(order => order.Items)
             .ThenInclude(item => item.Components)
             .SingleOrDefaultAsync(order => order.Id == orderId, cancellationToken);

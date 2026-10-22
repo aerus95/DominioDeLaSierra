@@ -163,10 +163,10 @@ public sealed class StripeCheckoutSessionTests(PostgresFixture fixture) : Databa
         var options = StripeCheckoutRequest.Create(new StripeCheckoutDraft(
             orderId,
             "DS-20261009-TEST",
-            2_690,
+            2_616,
             [
                 new StripeCheckoutLines.Line("Dominium", 1, 1_890),
-                new StripeCheckoutLines.Line(StripeCheckoutLines.ShippingName, 1, 800)
+                new StripeCheckoutLines.Line(StripeCheckoutLines.ShippingName, 1, 726)
             ],
             expires,
             "http://localhost:4200/checkout/exito",
@@ -177,7 +177,7 @@ public sealed class StripeCheckoutSessionTests(PostgresFixture fixture) : Databa
         Assert.Equal(expires.UtcDateTime, options.ExpiresAt);
         Assert.Equal("eur", options.LineItems[0].PriceData.Currency);
         Assert.Equal(1_890, options.LineItems[0].PriceData.UnitAmount);
-        Assert.Equal(800, options.LineItems[1].PriceData.UnitAmount);
+        Assert.Equal(726, options.LineItems[1].PriceData.UnitAmount);
         Assert.Null(options.LineItems[0].PriceData.TaxBehavior);
         Assert.Null(options.CustomerEmail);
         Assert.Equal(orderId.ToString("D"), options.Metadata["order_id"]);
@@ -405,7 +405,8 @@ public sealed class StripeCheckoutSessionTests(PostgresFixture fixture) : Databa
             "Calle Mayor 1",
             "Salamanca",
             "Salamanca",
-            null);
+            null,
+            "Stripe");
     }
 
     private static async Task<HttpResponseMessage> PayAsync(HttpClient client, Guid productId, string key)

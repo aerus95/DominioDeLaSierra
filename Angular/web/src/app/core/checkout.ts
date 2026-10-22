@@ -1,4 +1,4 @@
-export const FREE_SHIPPING_EUROS = 100;
+export const FREE_SHIPPING_EUROS = 60;
 
 export interface CheckoutLineInput {
   productId: string;
@@ -34,6 +34,8 @@ export interface CheckoutQuote {
   productVatCents: number;
   shippingCents: number;
   shippingVatRate: number | null;
+  shippingTaxableBaseCents: number | null;
+  shippingVatCents: number | null;
   totalCents: number;
   currency: string;
   shippingVatPending: boolean;
@@ -47,6 +49,8 @@ export interface GuestOrder {
   productVatCents: number;
   shippingCents: number;
   shippingVatRate: number | null;
+  shippingTaxableBaseCents: number | null;
+  shippingVatCents: number | null;
   totalCents: number;
   currency: string;
   reservationExpiresAt: string;
@@ -69,6 +73,9 @@ export interface CheckoutPayment {
   checkoutUrl: string;
   expiresAt: string;
   checkoutAccessToken?: string | null;
+  provider?: string | null;
+  redirectMethod?: string | null;
+  redirectFields?: Record<string, string> | null;
 }
 
 export const CHECKOUT_SUCCESS_PATH = '/checkout/exito';
@@ -91,7 +98,15 @@ export function checkoutIsOpen(gate: CheckoutGate, serverAllowed: boolean): bool
 }
 
 export function checkoutUsesPanelCookie(apiBaseUrl: string): boolean {
-  return apiBaseUrl.trim() === '';
+  const value = apiBaseUrl.trim();
+  if (value.length === 0) return true;
+  try {
+    const url = new URL(value);
+    return (url.protocol === 'http:' || url.protocol === 'https:')
+      && (url.hostname === 'localhost' || url.hostname === '127.0.0.1');
+  } catch {
+    return false;
+  }
 }
 
 export function checkoutAllowedByServer(body: unknown): boolean {
@@ -130,8 +145,37 @@ export function quotePayload(lines: readonly CheckoutLineInput[], postalCode: st
   };
 }
 
-export function placePayload(customer: CheckoutCustomerInput, lines: readonly CheckoutLineInput[]) {
-  return {
+export interface PaymentProviderOffer {
+  code: string;
+  displayName: string;
+}
+
+const knownPaymentProviders = new Set(['Stripe', 'Redsys', 'PayPal']);
+
+export function selectablePaymentProviders(
+  offers: readonly PaymentProviderOffer[] | null | undefined
+): PaymentProviderOffer[] {
+  return (offers ?? []).filter((offer) =>
+    knownPaymentProviders.has(offer.code) && offer.displayName.trim().length > 0);
+}
+
+export function placePayload(
+  customer: CheckoutCustomerInput,
+  lines: readonly CheckoutLineInput[],
+  paymentProvider?: string
+) {
+  const payload: {
+    lines: { productId: string; quantity: number }[];
+    destination: { postalCode: string; countryCode: string };
+    customerName: string;
+    email: string;
+    phone: string;
+    addressLine: string;
+    city: string;
+    province: string;
+    deliveryNotes: string;
+    paymentProvider?: string;
+  } = {
     lines: lines.map((line) => ({ productId: line.productId, quantity: line.quantity })),
     destination: { postalCode: customer.postalCode.trim(), countryCode: 'ES' },
     customerName: customer.name,
@@ -142,6 +186,10 @@ export function placePayload(customer: CheckoutCustomerInput, lines: readonly Ch
     province: customer.province,
     deliveryNotes: customer.notes
   };
+  if (paymentProvider) {
+    payload.paymentProvider = paymentProvider;
+  }
+  return payload;
 }
 
 export function paymentSessionPayload(orderId: string) {
@@ -238,6 +286,97 @@ export function stripeCheckoutUrl(value: string): string | null {
   } catch {
     return null;
   }
+}
+
+export function paypalSandboxCheckoutUrl(value: string): string | null {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'https:' || url.hostname !== 'www.sandbox.paypal.com' || url.username || url.password) return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+export function paypalReturnShouldCapture(routePath: string | null | undefined): boolean {
+  return routePath === 'checkout/exito';
+}
+
+export const REDSYS_TEST_ENDPOINT = 'https://sis-t.redsys.es:25443/sis/realizarPago';
+
+export function redsysTestEndpoint(value: string): string | null {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'https:' || url.hostname !== 'sis-t.redsys.es' || url.port !== '25443' || url.pathname !== '/sis/realizarPago') {
+      return null;
+    }
+    return `${url.origin}${url.pathname}`;
+  } catch {
+    return null;
+  }
+}
+
+export type PaymentRedirect =
+  | { method: 'get'; url: string }
+  | { method: 'post'; url: string; fields: Record<string, string> };
+
+export function paymentRedirect(payment: Pick<CheckoutPayment, 'checkoutUrl' | 'redirectMethod' | 'redirectFields' | 'provider'>): PaymentRedirect | null {
+  if (payment.redirectMethod === 'POST') {
+    const url = redsysTestEndpoint(payment.checkoutUrl);
+    const fields = payment.redirectFields ?? {};
+    const version = fields['Ds_SignatureVersion'];
+    const parameters = fields['Ds_MerchantParameters'];
+    const signature = fields['Ds_Signature'];
+    const names = Object.keys(fields);
+    if (!url || version !== 'HMAC_SHA512_V2' || !parameters || !signature) return null;
+    if (names.some((name) => name !== 'Ds_SignatureVersion' && name !== 'Ds_MerchantParameters' && name !== 'Ds_Signature')) {
+      return null;
+    }
+    return {
+      method: 'post',
+      url,
+      fields: {
+        Ds_SignatureVersion: version,
+        Ds_MerchantParameters: parameters,
+        Ds_Signature: signature
+      }
+    };
+  }
+
+  if (payment.provider === 'PayPal') {
+    const paypal = paypalSandboxCheckoutUrl(payment.checkoutUrl);
+    return paypal ? { method: 'get', url: paypal } : null;
+  }
+
+  const stripe = stripeCheckoutUrl(payment.checkoutUrl);
+  return stripe ? { method: 'get', url: stripe } : null;
+}
+
+export function providerSent(selected: string | null | undefined): string | undefined {
+  return selected === 'Stripe' || selected === 'Redsys' || selected === 'PayPal' ? selected : undefined;
+}
+
+export function paymentButtonLabel(selected: string | null | undefined): string {
+  if (selected === 'PayPal') return 'Pagar con PayPal';
+  if (selected === 'Redsys') return 'Pagar con tarjeta';
+  if (selected === 'Stripe') return 'Pagar con Stripe';
+  return 'El pago no está disponible';
+}
+
+export function submitPaymentForm(action: string, fields: Record<string, string>, document: Document): void {
+  const form = document.createElement('form');
+  form.method = 'POST';
+  form.action = action;
+  form.acceptCharset = 'UTF-8';
+  for (const [name, value] of Object.entries(fields)) {
+    const input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = name;
+    input.value = value;
+    form.appendChild(input);
+  }
+  document.body.appendChild(form);
+  form.submit();
 }
 
 export function forgetIdempotencyKey(signature: string, storage: Pick<Storage, 'removeItem'> | null): void {

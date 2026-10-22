@@ -1,9 +1,10 @@
 import { Component, DestroyRef, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { EMPTY, catchError, expand, map, of, switchMap, timer } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import {
+  CHECKOUT_CANCEL_MESSAGE,
   CHECKOUT_SUCCESS_MESSAGE,
   CHECKOUT_UNAVAILABLE_MESSAGE,
   CHECKOUT_UNKNOWN_MESSAGE,
@@ -14,6 +15,7 @@ import {
   checkoutOutcomeCopy,
   checkoutOutcomeView,
   nextCheckoutPoll,
+  paypalReturnShouldCapture,
   readCurrentCheckout
 } from '../../core/checkout';
 import { CheckoutService } from '../../core/checkout.service';
@@ -59,6 +61,7 @@ import { CheckoutService } from '../../core/checkout.service';
 })
 export class CheckoutResultComponent {
   private readonly checkout = inject(CheckoutService);
+  private readonly route = inject(ActivatedRoute);
   private readonly destroyRef = inject(DestroyRef);
   readonly view = signal<CheckoutOutcomeView>('loading');
   readonly outcome = signal<CheckoutOutcome | null>(null);
@@ -99,8 +102,12 @@ export class CheckoutResultComponent {
       map((outcome) => ({ outcome, failed: false as const })),
       catchError(() => of({ outcome: null, failed: true as const }))
     );
+    const prepare = paypalReturnShouldCapture(this.route.snapshot.routeConfig?.path)
+      ? this.checkout.capturePayPal(current.orderId, current.token).pipe(catchError(() => of(null)))
+      : of(null);
 
-    request().pipe(
+    prepare.pipe(
+      switchMap(() => request()),
       expand((result) => {
         completed += 1;
         this.show(checkoutOutcomeView(result.outcome?.status ?? null, result.failed), result.outcome, result.failed);
@@ -118,7 +125,9 @@ export class CheckoutResultComponent {
     this.heading.set(checkoutOutcomeCopy(view));
     this.amount.set(outcome ? checkoutAmount(outcome.totalCents, outcome.currency) : null);
     if (view === 'verifying') {
-      this.detail.set(CHECKOUT_SUCCESS_MESSAGE);
+      this.detail.set(this.route.snapshot.routeConfig?.path === 'checkout/cancelado'
+        ? CHECKOUT_CANCEL_MESSAGE
+        : CHECKOUT_SUCCESS_MESSAGE);
       return;
     }
     if (view === 'unknown') {

@@ -62,7 +62,7 @@ public class StripeCheckoutTests
     }
 
     [Fact]
-    public void Charges_the_persisted_gross_total_without_a_shipping_vat_rate()
+    public void Charges_the_persisted_total_including_shipping_vat()
     {
         var order = Order.CreatePending(
             Guid.NewGuid(),
@@ -84,9 +84,12 @@ public class StripeCheckoutTests
         Assert.Equal(2, lines.Count);
         Assert.Equal(1_890, lines[0].UnitAmountCents);
         Assert.Equal(StripeCheckoutLines.ShippingName, lines[1].Name);
-        Assert.Equal(800, lines[1].UnitAmountCents);
+        Assert.Equal(726, lines[1].UnitAmountCents);
+        Assert.Equal(2_616, order.TotalCents);
         Assert.Equal(order.TotalCents, lines.Sum(line => line.UnitAmountCents * line.Quantity));
-        Assert.Null(order.ShippingVatRate);
+        Assert.Equal(21m, order.ShippingVatRate);
+        Assert.Equal(600, order.ShippingTaxableBaseCents);
+        Assert.Equal(126, order.ShippingVatCents);
     }
 
     [Fact]
