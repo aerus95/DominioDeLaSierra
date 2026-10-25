@@ -150,7 +150,98 @@ public sealed class PayPalCheckoutTests(PostgresFixture fixture) : DatabaseTest(
         Assert.Equal(4, snapshot.Stock);
         Assert.Equal(1, host.Services.GetRequiredService<PayPalOrderScript>().CaptureCalls);
         Assert.Equal(0, snapshot.Invoices);
+        Assert.Equal(1, snapshot.Confirmations);
         Assert.False(string.IsNullOrWhiteSpace(snapshot.CaptureId));
+    }
+
+    [Fact]
+    public async Task Does_not_capture_again_when_two_returns_arrive_together()
+    {
+        await using var host = PayPalHost();
+        var started = await StartAsync(host, "PP-RACE", 5);
+        host.Services.GetRequiredService<PayPalOrderScript>().Status = "APPROVED";
+        var client = host.CreateClient();
+
+        var both = await Task.WhenAll(
+            CaptureAsync(client, started.Payment),
+            CaptureAsync(client, started.Payment));
+        var snapshot = await SnapshotAsync(host, started);
+
+        Assert.All(both, response => Assert.Equal(HttpStatusCode.OK, response.StatusCode));
+        Assert.Equal(OrderStatus.Paid, snapshot.Status);
+        Assert.Equal(StockReservationStatus.Confirmed, snapshot.Reservation);
+        Assert.Equal(4, snapshot.Stock);
+        Assert.Equal(1, host.Services.GetRequiredService<PayPalOrderScript>().CaptureCalls);
+        Assert.Equal(1, snapshot.Confirmations);
+    }
+
+    [Fact]
+    public async Task Does_not_capture_when_the_payer_has_not_approved()
+    {
+        await using var host = PayPalHost();
+        var started = await StartAsync(host, "PP-WAIT", 5);
+        host.Services.GetRequiredService<PayPalOrderScript>().Status = "PAYER_ACTION_REQUIRED";
+
+        var response = await CaptureAsync(host.CreateClient(), started.Payment);
+        var snapshot = await SnapshotAsync(host, started);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(nameof(OrderStatus.PendingPayment), (await response.Content.ReadFromJsonAsync<CheckoutOutcomeDto>(JsonOptions()))!.Status);
+        Assert.Equal(OrderStatus.PendingPayment, snapshot.Status);
+        Assert.Equal(StockReservationStatus.Reserved, snapshot.Reservation);
+        Assert.Equal(4, snapshot.Stock);
+        Assert.Equal(0, host.Services.GetRequiredService<PayPalOrderScript>().CaptureCalls);
+        Assert.Equal(0, snapshot.Confirmations);
+    }
+
+    [Fact]
+    public async Task Confirms_a_held_reservation_when_capture_arrives_after_the_clock()
+    {
+        await using var host = PayPalHost();
+        var started = await StartAsync(host, "PP-LATE", 5);
+        host.Services.GetRequiredService<PayPalOrderScript>().Status = "APPROVED";
+        var createdAt = DateTimeOffset.UtcNow;
+        await using (var scope = host.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var expires = createdAt.AddMinutes(-5);
+            var orderCreated = expires.AddMinutes(-30);
+            await db.Database.ExecuteSqlInterpolatedAsync(
+                $"""UPDATE "Orders" SET "CreatedAt" = {orderCreated}, "ReservationExpiresAt" = {expires} WHERE "Id" = {started.Payment.OrderId}""");
+        }
+
+        var response = await CaptureAsync(host.CreateClient(), started.Payment);
+        var snapshot = await SnapshotAsync(host, started);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(OrderStatus.Paid, snapshot.Status);
+        Assert.Equal(StockReservationStatus.Confirmed, snapshot.Reservation);
+        Assert.Equal(4, snapshot.Stock);
+        Assert.Equal(1, host.Services.GetRequiredService<PayPalOrderScript>().CaptureCalls);
+        Assert.Equal(1, snapshot.Confirmations);
+    }
+
+    [Fact]
+    public async Task Confirms_on_return_and_ignores_the_capture_webhook_that_arrives_later()
+    {
+        await using var host = PayPalHost();
+        var started = await StartAsync(host, "PP-RETURN", 5);
+        var script = host.Services.GetRequiredService<PayPalOrderScript>();
+        script.Status = "APPROVED";
+        using var rsa = Certificate(script);
+        var client = host.CreateClient();
+
+        var returned = await CaptureAsync(client, started.Payment);
+        var completed = Sign("WH-AFTER-RETURN", "PAYMENT.CAPTURE.COMPLETED", script.PaypalOrderId, rsa);
+        var webhook = await PostWebhookAsync(client, completed);
+        var snapshot = await SnapshotAsync(host, started);
+
+        Assert.Equal(HttpStatusCode.OK, returned.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, webhook.StatusCode);
+        Assert.Equal(OrderStatus.Paid, snapshot.Status);
+        Assert.Equal(4, snapshot.Stock);
+        Assert.Equal(1, script.CaptureCalls);
+        Assert.Equal(1, snapshot.Confirmations);
     }
 
     [Fact]
@@ -254,6 +345,7 @@ public sealed class PayPalCheckoutTests(PostgresFixture fixture) : DatabaseTest(
         Assert.Equal(OrderStatus.Paid, snapshot.Status);
         Assert.Equal(4, snapshot.Stock);
         Assert.Equal(2, snapshot.Events);
+        Assert.Equal(1, snapshot.Confirmations);
         Assert.Equal(0, script.CaptureCalls);
     }
 
@@ -743,7 +835,8 @@ public sealed class PayPalCheckoutTests(PostgresFixture fixture) : DatabaseTest(
             payment.AmountCents,
             payment.ExternalCaptureId,
             order.ReservationExpiresAt - order.CreatedAt,
-            payment.Events.Select(item => item.AttentionReason).Where(item => item is not null).Cast<string>().ToArray());
+            payment.Events.Select(item => item.AttentionReason).Where(item => item is not null).Cast<string>().ToArray(),
+            await db.OrderNotifications.CountAsync(item => item.OrderId == order.Id && item.Kind == OrderNotificationKind.PaidConfirmation));
     }
 
     private static async Task<CheckoutPaymentDto> ReadAsync(HttpResponseMessage response)
@@ -801,5 +894,6 @@ public sealed class PayPalCheckoutTests(PostgresFixture fixture) : DatabaseTest(
         long AmountCents,
         string? CaptureId,
         TimeSpan Hold,
-        IReadOnlyList<string> Attention);
+        IReadOnlyList<string> Attention,
+        int Confirmations);
 }

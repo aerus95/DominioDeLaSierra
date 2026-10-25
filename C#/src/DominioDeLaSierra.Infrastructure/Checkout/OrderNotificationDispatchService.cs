@@ -173,7 +173,9 @@ public sealed class OrderNotificationDispatchService(
         var order = await dbContext.Orders
             .AsNoTracking()
             .Include(item => item.Items)
+            .Include(item => item.Payments)
             .SingleAsync(item => item.Id == orderId, cancellationToken);
+        var payment = order.Payments.Single(item => item.Status == PaymentStatus.Succeeded);
         return new PaidConfirmationContent(
             order.Number,
             order.CustomerName,
@@ -186,8 +188,13 @@ public sealed class OrderNotificationDispatchService(
                     item.UnitPriceCents,
                     item.LineTotalCents))
                 .ToArray(),
+            order.ProductSubtotalCents,
+            order.ProductVatCents,
             order.ShippingCents,
+            order.ShippingVatCents,
             order.TotalCents,
+            order.CreatedAt,
+            PaymentMethodLabel(payment.Provider),
             order.AddressLine,
             order.PostalCode,
             order.City,
@@ -195,6 +202,14 @@ public sealed class OrderNotificationDispatchService(
             order.CountryCode == "ES" ? "España" : order.CountryCode,
             order.DeliveryNotes);
     }
+
+    private static string PaymentMethodLabel(PaymentProvider provider) => provider switch
+    {
+        PaymentProvider.PayPal => "PayPal",
+        PaymentProvider.Stripe => "Stripe",
+        PaymentProvider.Redsys => "Redsys",
+        _ => throw new InvalidOperationException("El proveedor del pago confirmado no es válido.")
+    };
 
     private async Task<List<Guid>> LockDueAsync(DateTimeOffset now, int batch, CancellationToken cancellationToken)
     {

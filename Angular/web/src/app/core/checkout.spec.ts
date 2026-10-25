@@ -28,6 +28,7 @@ import {
   checkoutOutcomeView,
   nextCheckoutPoll,
   paymentRedirect,
+  paypalCaptureClaim,
   paypalReturnShouldCapture,
   paypalSandboxCheckoutUrl,
   paymentButtonLabel,
@@ -196,7 +197,9 @@ describe('presupuesto del checkout', () => {
     const orderId = 'bbbbbbbb-cccc-dddd-eeee-ffffffffffff';
     rememberCurrentCheckout(orderId, 'token-opaco-de-acceso-1', storage);
     rememberCurrentCheckout(orderId, null, storage);
-    assert.deepEqual(readCurrentCheckout(storage), { orderId, token: 'token-opaco-de-acceso-1' });
+    assert.deepEqual(readCurrentCheckout(storage), { orderId, token: 'token-opaco-de-acceso-1', provider: null });
+    rememberCurrentCheckout(orderId, 'token-opaco-de-acceso-1', storage, 'PayPal');
+    assert.equal(readCurrentCheckout(storage)?.provider, 'PayPal');
     assert.equal(readCurrentCheckout(storage)?.token.includes('sk_'), false);
   });
 
@@ -223,8 +226,22 @@ describe('presupuesto del checkout', () => {
     assert.equal(paymentButtonLabel('Redsys'), 'Pagar con tarjeta');
     assert.equal(paymentButtonLabel('Stripe'), 'Pagar con Stripe');
     assert.equal(paymentButtonLabel(null), 'El pago no está disponible');
-    assert.equal(paypalReturnShouldCapture('checkout/exito'), true);
-    assert.equal(paypalReturnShouldCapture('checkout/cancelado'), false);
+    assert.equal(paypalReturnShouldCapture('checkout/exito', 'Paid', 'PayPal'), false);
+    assert.equal(paypalReturnShouldCapture('checkout/exito', 'PendingPayment', 'PayPal'), true);
+    assert.equal(paypalReturnShouldCapture('checkout/exito', 'PendingPayment', null), true);
+    assert.equal(paypalReturnShouldCapture('checkout/exito', 'PendingPayment', 'Stripe'), false);
+    assert.equal(paypalReturnShouldCapture('checkout/exito', 'PendingPayment', 'Redsys'), false);
+    assert.equal(paypalReturnShouldCapture('checkout/exito', 'Cancelled', 'PayPal'), false);
+    assert.equal(paypalReturnShouldCapture('checkout/cancelado', 'PendingPayment', 'PayPal'), false);
+    const claims = new Map<string, string>();
+    const claimStorage = {
+      getItem: (key: string) => claims.get(key) ?? null,
+      setItem: (key: string, value: string) => { claims.set(key, value); }
+    };
+    const claimOrder = 'bbbbbbbb-cccc-dddd-eeee-ffffffffffff';
+    assert.equal(paypalCaptureClaim(claimOrder, 1_000, claimStorage), 'owner');
+    assert.equal(paypalCaptureClaim(claimOrder, 1_000, claimStorage), 'wait');
+    assert.equal(paypalCaptureClaim(claimOrder, 30_000, claimStorage), 'owner');
     assert.equal(paypalSandboxCheckoutUrl('https://www.paypal.com/checkoutnow?token=1'), null);
     const fields = {
       Ds_SignatureVersion: 'HMAC_SHA512_V2',

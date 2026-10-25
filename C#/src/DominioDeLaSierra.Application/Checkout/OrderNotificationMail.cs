@@ -16,8 +16,13 @@ public sealed record PaidConfirmationContent(
     string CustomerName,
     string Email,
     IReadOnlyList<PaidConfirmationLine> Lines,
+    long ProductSubtotalCents,
+    long ProductVatCents,
     long ShippingCents,
+    long? ShippingVatCents,
     long TotalCents,
+    DateTimeOffset OrderedAt,
+    string PaymentMethod,
     string AddressLine,
     string PostalCode,
     string City,
@@ -35,6 +40,10 @@ public sealed record OrderMail(
 public static class PaidConfirmationMail
 {
     public const string ShippedLaterMessage = "Cuando el pedido salga, te escribiremos con el transportista y el seguimiento.";
+    public const string PreparingMessage = "Estamos preparando tu pedido. No hay un plazo de salida fijado.";
+    public const string StoreEmail = "info@dominiodelasierra.com";
+    public const string StorePhone = "+34 665 144 697";
+    public const string StorePlace = "San Esteban de la Sierra, Salamanca";
     private static readonly CultureInfo Spanish = CultureInfo.GetCultureInfo("es-ES");
 
     public static OrderMail Compose(PaidConfirmationContent content, string messageId)
@@ -60,8 +69,13 @@ public static class PaidConfirmationMail
         var province = Line(content.Province, "La provincia");
         var country = Line(content.CountryLabel, "El país");
         var notes = string.IsNullOrWhiteSpace(content.DeliveryNotes) ? null : Line(content.DeliveryNotes, "Las indicaciones");
+        var products = Euros(content.ProductSubtotalCents);
+        var productVat = Euros(content.ProductVatCents);
         var shipping = Euros(content.ShippingCents);
+        var shippingVat = content.ShippingVatCents is long shippingVatCents ? Euros(shippingVatCents) : null;
         var total = Euros(content.TotalCents);
+        var orderedAt = FormatOrderedAt(content.OrderedAt);
+        var paymentMethod = Line(content.PaymentMethod, "El método de pago");
         var lines = content.Lines.Select(line => new PreparedLine(
             Line(line.Name, "El producto"),
             Line(line.Reference, "La referencia"),
@@ -73,12 +87,12 @@ public static class PaidConfirmationMail
             throw new ArgumentException("La cantidad del aviso no es válida.");
         }
 
-        var subject = $"Confirmación de tu pedido {number}";
+        var subject = $"Hemos recibido tu pedido {number} | Dominio de la Sierra";
         return new OrderMail(
             email,
             subject,
-            Text(name, number, lines, shipping, total, address, postalCode, city, province, country, notes),
-            Html(subject, name, number, lines, shipping, total, address, postalCode, city, province, country, notes),
+            Text(name, number, orderedAt, paymentMethod, lines, products, productVat, shipping, shippingVat, total, address, postalCode, city, province, country, notes),
+            Html(subject, name, number, orderedAt, paymentMethod, lines, products, productVat, shipping, shippingVat, total, address, postalCode, city, province, country, notes),
             message);
     }
 
@@ -95,8 +109,13 @@ public static class PaidConfirmationMail
     private static string Text(
         string name,
         string number,
+        string orderedAt,
+        string paymentMethod,
         IReadOnlyList<PreparedLine> lines,
+        string products,
+        string productVat,
         string shipping,
+        string? shippingVat,
         string total,
         string address,
         string postalCode,
@@ -110,19 +129,34 @@ public static class PaidConfirmationMail
         body.AppendLine();
         body.Append("Hola ").Append(name).AppendLine(",");
         body.AppendLine();
-        body.Append("Hemos registrado el pago de tu pedido ").Append(number).AppendLine(".");
+        body.AppendLine("Hemos recibido tu pedido y confirmado el pago.");
+        body.AppendLine("Gracias por confiar en nuestra bodega.");
+        body.AppendLine();
+        body.Append("Número de pedido: ").AppendLine(number);
+        body.Append("Fecha del pedido: ").AppendLine(orderedAt);
+        body.AppendLine("Estado: Pago confirmado");
+        body.Append("Método de pago: ").AppendLine(paymentMethod);
         body.AppendLine();
         foreach (var line in lines)
         {
-            body.Append(line.Quantity).Append(" × ").Append(line.Name)
+            body.Append(line.Name)
                 .Append(" (").Append(line.Reference).Append(") · ")
+                .Append(line.Quantity).Append(" × ")
                 .Append(line.UnitPrice).Append(" · ")
                 .AppendLine(line.LineTotal);
         }
 
         body.AppendLine();
-        body.Append("Gastos de envío: ").AppendLine(shipping);
+        body.Append("Productos, IVA incluido: ").AppendLine(products);
+        body.Append("Envío, IVA incluido: ").AppendLine(shipping);
+        body.Append("IVA incluido en los productos: ").AppendLine(productVat);
+        if (shippingVat is not null)
+        {
+            body.Append("IVA incluido en el envío: ").AppendLine(shippingVat);
+        }
+
         body.Append("Total pagado: ").AppendLine(total);
+        body.AppendLine("El IVA ya va incluido en los importes. No se suma otra vez.");
         body.AppendLine();
         body.AppendLine("Entrega:");
         body.AppendLine(address);
@@ -135,7 +169,12 @@ public static class PaidConfirmationMail
         }
 
         body.AppendLine();
+        body.AppendLine(PreparingMessage);
         body.AppendLine(ShippedLaterMessage);
+        body.AppendLine();
+        body.AppendLine(StorePlace);
+        body.AppendLine(StoreEmail);
+        body.Append("WhatsApp ").AppendLine(StorePhone);
         return body.ToString();
     }
 
@@ -143,8 +182,13 @@ public static class PaidConfirmationMail
         string subject,
         string name,
         string number,
+        string orderedAt,
+        string paymentMethod,
         IReadOnlyList<PreparedLine> lines,
+        string products,
+        string productVat,
         string shipping,
+        string? shippingVat,
         string total,
         string address,
         string postalCode,
@@ -161,10 +205,15 @@ public static class PaidConfirmationMail
                 .Append("<div style=\"color:#625d5b;font-size:13px;\">").Append(Encode(line.Reference)).Append("</div></td>")
                 .Append("<td style=\"padding:12px 8px;border-bottom:1px solid #d9d3cb;text-align:right;color:#292628;\">")
                 .Append(line.Quantity).Append("</td>")
+                .Append("<td style=\"padding:12px 8px;border-bottom:1px solid #d9d3cb;text-align:right;color:#292628;\">")
+                .Append(Encode(line.UnitPrice)).Append("</td>")
                 .Append("<td style=\"padding:12px 0;border-bottom:1px solid #d9d3cb;text-align:right;color:#292628;\">")
                 .Append(Encode(line.LineTotal)).Append("</td></tr>");
         }
 
+        var shippingVatHtml = shippingVat is null
+            ? string.Empty
+            : "<p style=\"margin:4px 0;font-size:15px;\">IVA incluido en el envío: " + Encode(shippingVat) + "</p>";
         var notesHtml = notes is null
             ? string.Empty
             : "<p style=\"margin:8px 0 0;color:#625d5b;\">" + Encode(notes) + "</p>";
@@ -185,19 +234,28 @@ public static class PaidConfirmationMail
             <p style="margin:0;font-family:Georgia,serif;font-size:28px;line-height:1.2;color:#faf9f6;">Dominio de la Sierra</p>
             </td></tr>
             <tr><td style="padding:32px;font-family:Georgia,serif;color:#292628;">
-            <p style="margin:0 0 8px;font-size:13px;letter-spacing:.14em;color:#783b4b;">PEDIDO CONFIRMADO</p>
+            <p style="margin:0 0 8px;font-size:13px;letter-spacing:.14em;color:#783b4b;">PAGO CONFIRMADO</p>
             <h1 style="margin:0 0 16px;font-size:28px;line-height:1.25;font-weight:normal;">Hola {Encode(name)}</h1>
-            <p style="margin:0 0 24px;font-size:16px;line-height:1.7;">Hemos registrado el pago de tu pedido {Encode(number)}.</p>
-            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="font-size:15px;">
-            <tr><td style="padding-bottom:8px;color:#625d5b;font-size:12px;letter-spacing:.08em;">PRODUCTO</td><td style="padding-bottom:8px;color:#625d5b;font-size:12px;letter-spacing:.08em;text-align:right;">CANT.</td><td style="padding-bottom:8px;color:#625d5b;font-size:12px;letter-spacing:.08em;text-align:right;">IMPORTE</td></tr>
+            <p style="margin:0 0 8px;font-size:16px;line-height:1.7;">Hemos recibido tu pedido y confirmado el pago.</p>
+            <p style="margin:0 0 24px;font-size:16px;line-height:1.7;">Gracias por confiar en nuestra bodega.</p>
+            <p style="margin:0;font-size:15px;line-height:1.7;">Número de pedido: {Encode(number)}<br>Fecha del pedido: {Encode(orderedAt)}<br>Estado: Pago confirmado<br>Método de pago: {Encode(paymentMethod)}</p>
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:24px;font-size:15px;">
+            <tr><td style="padding-bottom:8px;color:#625d5b;font-size:12px;letter-spacing:.08em;">PRODUCTO</td><td style="padding-bottom:8px;color:#625d5b;font-size:12px;letter-spacing:.08em;text-align:right;">CANT.</td><td style="padding-bottom:8px;color:#625d5b;font-size:12px;letter-spacing:.08em;text-align:right;">PRECIO</td><td style="padding-bottom:8px;color:#625d5b;font-size:12px;letter-spacing:.08em;text-align:right;">SUBTOTAL</td></tr>
             {rows}
             </table>
-            <p style="margin:20px 0 4px;font-size:15px;">Gastos de envío: {Encode(shipping)}</p>
-            <p style="margin:0 0 24px;font-size:18px;">Total pagado: {Encode(total)}</p>
+            <p style="margin:20px 0 4px;font-size:15px;">Productos, IVA incluido: {Encode(products)}</p>
+            <p style="margin:4px 0;font-size:15px;">Envío, IVA incluido: {Encode(shipping)}</p>
+            <p style="margin:4px 0;font-size:15px;">IVA incluido en los productos: {Encode(productVat)}</p>
+            {shippingVatHtml}
+            <p style="margin:4px 0 0;font-size:14px;line-height:1.6;color:#625d5b;">El IVA ya va incluido en los importes. No se suma otra vez.</p>
+            <p style="margin:12px 0 24px;font-size:18px;">Total pagado: {Encode(total)}</p>
             <p style="margin:0;font-size:12px;letter-spacing:.12em;color:#783b4b;">ENTREGA</p>
             <p style="margin:8px 0 0;font-size:16px;line-height:1.6;">{Encode(address)}<br>{Encode(postalCode)} {Encode(city)}<br>{Encode(province)}<br>{Encode(country)}</p>
             {notesHtml}
-            <p style="margin:28px 0 0;padding-top:20px;border-top:1px solid #d9d3cb;font-size:15px;line-height:1.7;color:#625d5b;">{Encode(ShippedLaterMessage)}</p>
+            <p style="margin:28px 0 0;padding-top:20px;border-top:1px solid #d9d3cb;font-size:15px;line-height:1.7;color:#625d5b;">{Encode(PreparingMessage)} {Encode(ShippedLaterMessage)}</p>
+            </td></tr>
+            <tr><td style="padding:20px 32px 28px;background:#eeeae3;font-family:Georgia,serif;font-size:13px;line-height:1.6;color:#625d5b;">
+            Dominio de la Sierra<br>{Encode(StorePlace)}<br>{Encode(StoreEmail)}<br>WhatsApp {Encode(StorePhone)}
             </td></tr>
             </table>
             </td></tr>
@@ -205,6 +263,13 @@ public static class PaidConfirmationMail
             </body>
             </html>
             """;
+    }
+
+    private static string FormatOrderedAt(DateTimeOffset orderedAt)
+    {
+        var zone = TimeZoneInfo.FindSystemTimeZoneById("Romance Standard Time");
+        var local = TimeZoneInfo.ConvertTime(orderedAt, zone);
+        return local.ToString("d 'de' MMMM 'de' yyyy, HH:mm", Spanish);
     }
 
     private static string Line(string? value, string label)

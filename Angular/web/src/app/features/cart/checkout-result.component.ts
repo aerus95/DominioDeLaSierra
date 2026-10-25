@@ -5,6 +5,8 @@ import { EMPTY, catchError, expand, map, of, switchMap, timer } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import {
   CHECKOUT_CANCEL_MESSAGE,
+  CHECKOUT_PENDING_MESSAGE,
+  CHECKOUT_PROCESSING_MESSAGE,
   CHECKOUT_SUCCESS_MESSAGE,
   CHECKOUT_UNAVAILABLE_MESSAGE,
   CHECKOUT_UNKNOWN_MESSAGE,
@@ -15,6 +17,7 @@ import {
   checkoutOutcomeCopy,
   checkoutOutcomeView,
   nextCheckoutPoll,
+  paypalCaptureClaim,
   paypalReturnShouldCapture,
   readCurrentCheckout
 } from '../../core/checkout';
@@ -93,24 +96,32 @@ export class CheckoutResultComponent {
   private followPayment(): void {
     const current = readCurrentCheckout(this.storage());
     if (!current) {
-      this.show('unknown', null, false);
+      this.show('unknown', null, false, false);
       return;
     }
 
     let completed = 0;
+    let captureStarted = false;
+    const path = this.route.snapshot.routeConfig?.path;
     const request = () => this.checkout.outcome(current.orderId, current.token).pipe(
       map((outcome) => ({ outcome, failed: false as const })),
       catchError(() => of({ outcome: null, failed: true as const }))
     );
-    const prepare = paypalReturnShouldCapture(this.route.snapshot.routeConfig?.path)
-      ? this.checkout.capturePayPal(current.orderId, current.token).pipe(catchError(() => of(null)))
-      : of(null);
 
-    prepare.pipe(
-      switchMap(() => request()),
+    request().pipe(
+      switchMap((result) => {
+        const status = result.failed ? null : result.outcome?.status ?? null;
+        if (!paypalReturnShouldCapture(path, status, current.provider)) return of(result);
+        if (paypalCaptureClaim(current.orderId, Date.now(), this.storage()) !== 'owner') return of(result);
+        captureStarted = true;
+        return this.checkout.capturePayPal(current.orderId, current.token).pipe(
+          catchError(() => of(null)),
+          switchMap(() => request())
+        );
+      }),
       expand((result) => {
         completed += 1;
-        this.show(checkoutOutcomeView(result.outcome?.status ?? null, result.failed), result.outcome, result.failed);
+        this.show(checkoutOutcomeView(result.outcome?.status ?? null, result.failed), result.outcome, result.failed, captureStarted);
         const wait = nextCheckoutPoll(this.view(), completed);
         if (wait === null) return EMPTY;
         return timer(wait).pipe(switchMap(() => request()));
@@ -119,15 +130,16 @@ export class CheckoutResultComponent {
     ).subscribe();
   }
 
-  private show(view: CheckoutOutcomeView, outcome: CheckoutOutcome | null, failed: boolean): void {
+  private show(view: CheckoutOutcomeView, outcome: CheckoutOutcome | null, failed: boolean, captureStarted: boolean): void {
     this.view.set(view);
     this.outcome.set(outcome);
     this.heading.set(checkoutOutcomeCopy(view));
     this.amount.set(outcome ? checkoutAmount(outcome.totalCents, outcome.currency) : null);
     if (view === 'verifying') {
-      this.detail.set(this.route.snapshot.routeConfig?.path === 'checkout/cancelado'
+      const path = this.route.snapshot.routeConfig?.path;
+      this.detail.set(path === 'checkout/cancelado'
         ? CHECKOUT_CANCEL_MESSAGE
-        : CHECKOUT_SUCCESS_MESSAGE);
+        : captureStarted ? CHECKOUT_PROCESSING_MESSAGE : CHECKOUT_PENDING_MESSAGE);
       return;
     }
     if (view === 'unknown') {

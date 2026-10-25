@@ -20,7 +20,7 @@ public class OrderNotificationMailTests
             Content(name: "Ana\r\n<script>alert(1)</script>"),
             MessageId);
 
-        Assert.Equal("Confirmación de tu pedido DS-TEST-NOTIFY", mail.Subject);
+        Assert.Equal("Hemos recibido tu pedido DS-TEST-NOTIFY | Dominio de la Sierra", mail.Subject);
         Assert.DoesNotContain("\r", mail.Subject, StringComparison.Ordinal);
         Assert.DoesNotContain("\n", mail.Subject, StringComparison.Ordinal);
         Assert.Contains("Ana &lt;script&gt;alert(1)&lt;/script&gt;", mail.HtmlBody, StringComparison.Ordinal);
@@ -30,6 +30,13 @@ public class OrderNotificationMailTests
         Assert.Contains("#382029", mail.HtmlBody, StringComparison.Ordinal);
         Assert.Contains("DOM-1", mail.HtmlBody, StringComparison.Ordinal);
         Assert.Contains("17,00 €", mail.HtmlBody, StringComparison.Ordinal);
+        Assert.Contains("Hemos recibido tu pedido y confirmado el pago.", mail.TextBody, StringComparison.Ordinal);
+        Assert.Contains("Pago confirmado", mail.TextBody, StringComparison.Ordinal);
+        Assert.Contains("PayPal", mail.TextBody, StringComparison.Ordinal);
+        Assert.Contains("IVA incluido en los productos: 2,95 €", mail.TextBody, StringComparison.Ordinal);
+        Assert.Contains("IVA incluido en el envío: 1,39 €", mail.TextBody, StringComparison.Ordinal);
+        Assert.Contains("No se suma otra vez.", mail.TextBody, StringComparison.Ordinal);
+        Assert.Contains(PaidConfirmationMail.StoreEmail, mail.TextBody, StringComparison.Ordinal);
         Assert.Contains("8,00 €", mail.TextBody, StringComparison.Ordinal);
         Assert.Contains("25,00 €", mail.TextBody, StringComparison.Ordinal);
         Assert.Contains("Calle Mayor 1", mail.TextBody, StringComparison.Ordinal);
@@ -178,8 +185,13 @@ public class OrderNotificationMailTests
             name,
             "ana@example.com",
             [new PaidConfirmationLine("Dominium", "DOM-1", 1, 1_700, 1_700)],
+            1_700,
+            295,
             800,
+            139,
             2_500,
+            CreatedAt,
+            "PayPal",
             "Calle Mayor 1",
             "37001",
             "Salamanca",

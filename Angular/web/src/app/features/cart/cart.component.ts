@@ -191,7 +191,7 @@ export class CartComponent {
     this.checkout.pay(this.customerInput(), lines, key, providerSent(this.selectedProvider())).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (payment) => {
         rememberCheckoutAccess(payment.orderId, payment.checkoutAccessToken, storage);
-        rememberCurrentCheckout(payment.orderId, payment.checkoutAccessToken, storage);
+        rememberCurrentCheckout(payment.orderId, payment.checkoutAccessToken, storage, payment.provider);
         if (payment.status === 'Paid') {
           this.paying.set(false);
           this.checkoutError.set('El navegador no puede dar el pago por confirmado.');

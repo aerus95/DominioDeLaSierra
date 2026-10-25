@@ -149,6 +149,24 @@ public class OrderNotificationTests
     }
 
     [Fact]
+    public void Pending_failed_or_cancelled_payment_does_not_open_a_confirmation()
+    {
+        var (pending, _, _) = PendingOrder();
+        Assert.Empty(pending.Notifications);
+
+        var (failed, failedPayment, _) = PendingOrder();
+        failed.RecordPaymentFailure(failedPayment.Id, PaidAt);
+        Assert.Equal(OrderStatus.PendingPayment, failed.Status);
+        Assert.Empty(failed.Notifications);
+
+        var (cancelled, cancelledPayment, _) = PendingOrder();
+        cancelled.RecordPaymentCancellation(cancelledPayment.Id, PaidAt);
+        cancelled.Cancel(PaidAt);
+        Assert.Equal(OrderStatus.Cancelled, cancelled.Status);
+        Assert.Empty(cancelled.Notifications);
+    }
+
+    [Fact]
     public void Does_not_open_a_confirmation_unless_the_order_has_just_been_paid()
     {
         var (order, payment, _) = PendingOrder();

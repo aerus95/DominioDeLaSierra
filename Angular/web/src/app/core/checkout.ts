@@ -82,6 +82,8 @@ export const CHECKOUT_SUCCESS_PATH = '/checkout/exito';
 export const CHECKOUT_CANCEL_PATH = '/checkout/cancelado';
 export const CHECKOUT_SUCCESS_MESSAGE = 'El pago está en proceso de verificación. Esta página no confirma el cobro.';
 export const CHECKOUT_CANCEL_MESSAGE = 'Has vuelto sin completar el pago. El pedido sigue pendiente y la caja no se ha vaciado.';
+export const CHECKOUT_PROCESSING_MESSAGE = 'Estamos confirmando el pago. Recargar esta página no inicia otro cobro.';
+export const CHECKOUT_PENDING_MESSAGE = 'El pago sigue pendiente. No hace falta volver a pagarlo desde esta pantalla.';
 export const CHECKOUT_CONFIRMED_MESSAGE = 'Pago confirmado.';
 export const CHECKOUT_VERIFYING_MESSAGE = 'Estamos verificando el pago.';
 export const CHECKOUT_INCOMPLETE_MESSAGE = 'Pago no completado.';
@@ -212,6 +214,7 @@ export interface CheckoutOutcome {
 export interface CurrentCheckout {
   orderId: string;
   token: string;
+  provider: string | null;
 }
 
 const currentCheckoutKey = 'ds-checkout-current';
@@ -219,21 +222,26 @@ const currentCheckoutKey = 'ds-checkout-current';
 export function rememberCurrentCheckout(
   orderId: string,
   token: string | null | undefined,
-  storage: Pick<Storage, 'getItem' | 'setItem'> | null
+  storage: Pick<Storage, 'getItem' | 'setItem'> | null,
+  provider?: string | null
 ): void {
   if (!orderId || !token) return;
-  storage?.setItem(currentCheckoutKey, JSON.stringify({ orderId, token }));
+  const known = provider === 'Stripe' || provider === 'Redsys' || provider === 'PayPal' ? provider : null;
+  storage?.setItem(currentCheckoutKey, JSON.stringify({ orderId, token, provider: known }));
 }
 
 export function readCurrentCheckout(storage: Pick<Storage, 'getItem'> | null): CurrentCheckout | null {
   const raw = storage?.getItem(currentCheckoutKey);
   if (!raw) return null;
   try {
-    const parsed = JSON.parse(raw) as { orderId?: unknown; token?: unknown };
+    const parsed = JSON.parse(raw) as { orderId?: unknown; token?: unknown; provider?: unknown };
     if (typeof parsed.orderId !== 'string' || typeof parsed.token !== 'string') return null;
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(parsed.orderId)) return null;
     if (parsed.token.length < 20 || parsed.token.length > 128) return null;
-    return { orderId: parsed.orderId, token: parsed.token };
+    const provider = parsed.provider === 'Stripe' || parsed.provider === 'Redsys' || parsed.provider === 'PayPal'
+      ? parsed.provider
+      : null;
+    return { orderId: parsed.orderId, token: parsed.token, provider };
   } catch {
     return null;
   }
@@ -298,8 +306,27 @@ export function paypalSandboxCheckoutUrl(value: string): string | null {
   }
 }
 
-export function paypalReturnShouldCapture(routePath: string | null | undefined): boolean {
-  return routePath === 'checkout/exito';
+export function paypalReturnShouldCapture(
+  routePath: string | null | undefined,
+  status: string | null | undefined,
+  provider: string | null | undefined
+): boolean {
+  if (routePath !== 'checkout/exito' || status !== 'PendingPayment') return false;
+  return provider === 'PayPal' || provider == null;
+}
+
+export function paypalCaptureClaim(
+  orderId: string,
+  nowMs: number,
+  storage: Pick<Storage, 'getItem' | 'setItem'> | null,
+  leaseMs = 25_000
+): 'owner' | 'wait' {
+  if (!storage) return 'owner';
+  const key = `ds-paypal-capture:${orderId}`;
+  const until = Number(storage.getItem(key));
+  if (Number.isFinite(until) && until > nowMs) return 'wait';
+  storage.setItem(key, String(nowMs + leaseMs));
+  return 'owner';
 }
 
 export const REDSYS_TEST_ENDPOINT = 'https://sis-t.redsys.es:25443/sis/realizarPago';
