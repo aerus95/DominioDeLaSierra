@@ -56,10 +56,10 @@ La API solo recibe `PayPal__Environment=Sandbox`. Si el proceso ya tiene ese val
 | Mailpit | `http://127.0.0.1:8025` | El script apaga el envío de avisos. |
 | API | `http://localhost:5141` | Development. Panel en `/admin/login`. |
 | Tienda | `http://localhost:4200` | |
-| Relay | `http://127.0.0.1:5088` | Solo reenvía `POST /api/v1/checkout/paypal/webhook`. |
+| Relay | `http://127.0.0.1:5088` | Solo reenvía dos POST: el webhook de PayPal y la notificación de Redsys. |
 | Túnel | URL `https://….trycloudflare.com` | Apunta solo al relay. |
 
-La API arranca con los barridos, la conciliación automática y la emisión de facturas desactivados. Stripe y Redsys no se activan: si hubiera claves en la terminal, no se copian al proceso de la API y `Redsys__Enabled` queda en `false`.
+La API arranca con los barridos, la conciliación automática y la emisión de facturas desactivados. Stripe no se activa. Redsys tampoco, salvo el arranque `-WithRedsys` descrito más abajo. En el arranque habitual `Redsys__Enabled` queda en `false` y las claves de Redsys no se copian al proceso.
 
 El checkout de Development sigue exigiendo un Administrator autenticado. El script no crea ese usuario ni cambia su contraseña.
 
@@ -71,9 +71,12 @@ Al terminar, el resumen debe marcar PostgreSQL y Mailpit como `OK`. Después:
 - `http://localhost:5141/admin/login` abre el panel.
 - `http://localhost:4200` abre la tienda.
 - Un GET a `http://127.0.0.1:5088/api/v1/checkout/paypal/webhook` devuelve **405**.
+- Un GET a `http://127.0.0.1:5088/api/v1/checkout/redsys/notification` también devuelve **405**.
 - Un GET a la URL pública que imprime el script, terminada en `/api/v1/checkout/paypal/webhook`, también devuelve **405**.
+- La misma URL pública terminada en `/api/v1/checkout/redsys/notification` devuelve **405**.
+- `GET /admin/login` y `GET /api/v1/checkout/payments`, en local y por el túnel, devuelven **404**.
 
-Ese 405 significa que la petición llegó al relay y que el filtro rechazó GET. No significa que PayPal haya firmado un webhook ni que el pago vaya a funcionar. El relay no publica el panel ni el resto de la API: cualquier otra ruta responde 404.
+Ese 405 significa que la petición llegó al relay y que el filtro rechazó GET. No significa que PayPal haya firmado un webhook, ni que Redsys haya notificado un pago. El relay no publica el panel ni el resto de la API: cualquier otra ruta responde 404.
 
 El script no registra la URL en PayPal Developer.
 
@@ -87,6 +90,39 @@ Hazlo a mano, cada vez que el túnel sea nuevo. La URL `trycloudflare.com` cambi
 4. No crees otro webhook si quieres conservar el mismo Webhook ID.
 
 Si el túnel no entrega una URL válida, la API, la tienda y el relay siguen en marcha. El resumen lo indica. Una URL escrita en el log no cuenta hasta que cloudflared registre la conexión, el nombre resuelva y un GET público devuelva 405. No se reutiliza una URL de un túnel ya cerrado.
+
+## Redsys TEST
+
+El arranque habitual deja Redsys apagado. Para probar la pasarela junto con PayPal Sandbox:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-dev.ps1 -WithRedsys
+```
+
+Ese modo abre primero el relay y el túnel. Solo cuando la URL pública actual responde, pide las credenciales y arranca o reinicia la API. Así `Redsys__MerchantUrl` sale del túnel que acaba de registrarse, no de uno anterior:
+
+`https://<tunel-actual>.trycloudflare.com/api/v1/checkout/redsys/notification`
+
+En la terminal pide, por este orden:
+
+1. Las credenciales de PayPal Sandbox, igual que el arranque habitual, si la API se va a crear o a reiniciar.
+2. El código de comercio TEST, 9 dígitos, visible mientras se escribe.
+3. El terminal TEST, visible.
+4. La clave de firma TEST, con entrada oculta. No queda en el historial.
+
+No se guardan en `.env`, JSON, logs, Git ni en la línea de comandos. Viajan por la entrada estándar del proceso interno que arranca solo la API. Angular, el relay y `cloudflared` no las reciben. Al detener la API desaparecen con el proceso.
+
+Redsys solo se habilita si el entorno de la API es Development, `Redsys__Environment` es `Test`, la firma es `HMAC_SHA512_V2` y el comercio, el terminal, la clave y las tres URLs están completos. Un valor `Live` en el proceso detiene el arranque. El retorno correcto es `http://localhost:4200/checkout/exito` y el de cancelación `http://localhost:4200/checkout/cancelado`.
+
+Si la API ya estaba en marcha, este modo la reinicia para incorporar esas variables. PostgreSQL, Mailpit, Angular, el relay y el túnel no se reinician por eso. Si el relay todavía no admite la notificación, se sustituye solo ese proceso antes de tocar la API.
+
+Si más tarde `-Only Cloudflare` crea otra URL y la API sigue con la anterior, el resumen marca `MerchantUrl obsoleta` y no reinicia nada. La recuperación, que pide otra vez las credenciales y reinicia solo la API, es:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-dev.ps1 -Only Redsys
+```
+
+Ninguno de estos comandos crea un pedido ni envía una operación a Redsys. La clave no se pega en el chat.
 
 Para reintentar solo el túnel, sin volver a pedir las credenciales y sin reiniciar API, Angular, relay ni PostgreSQL:
 

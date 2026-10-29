@@ -6,8 +6,10 @@
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet("Cloudflare")]
-    [string]$Only
+    [ValidateSet("Cloudflare", "Redsys")]
+    [string]$Only,
+
+    [switch]$WithRedsys
 )
 
 Set-StrictMode -Version 2.0
@@ -22,6 +24,10 @@ $script:StatePath = $null
 $script:SupervisorPath = $null
 $script:SuggestedWebhookId = "9UC40709PV7468705"
 $script:WebhookPath = "/api/v1/checkout/paypal/webhook"
+$script:RedsysPath = "/api/v1/checkout/redsys/notification"
+$script:RedsysUrlOk = "http://localhost:4200/checkout/exito"
+$script:RedsysUrlKo = "http://localhost:4200/checkout/cancelado"
+$script:TunnelOrigin = $null
 $script:RemovedEnvironmentNames = @(
     "PayPal__ClientId",
     "PayPal__ClientSecret",
@@ -33,7 +39,14 @@ $script:RemovedEnvironmentNames = @(
     "STRIPE_WEBHOOK_SECRET",
     "Stripe__Gateway",
     "Redsys__Enabled",
+    "Redsys__Environment",
+    "Redsys__MerchantCode",
+    "Redsys__Terminal",
     "Redsys__SecretKey",
+    "Redsys__SignatureVersion",
+    "Redsys__MerchantUrl",
+    "Redsys__UrlOk",
+    "Redsys__UrlKo",
     "Database__Password",
     "POSTGRES_PASSWORD"
 )
@@ -54,6 +67,8 @@ $script:Report = @{
     Angular = "detenida"
     Relay = "detenido"
     Cloudflare = "detenido"
+    Redsys = "desactivado"
+    MerchantUrl = "no aplica"
 }
 
 function Write-Info {
@@ -581,6 +596,202 @@ function Read-PayPalCredentials {
     }
 }
 
+function Test-RedsysParentEnvironment {
+    $environment = [Environment]::GetEnvironmentVariable("Redsys__Environment", "Process")
+    if ([string]::IsNullOrWhiteSpace($environment) -or $environment.Trim() -eq "Test") {
+        return $true
+    }
+
+    Write-Fail "Redsys__Environment solo puede ser Test." "Quita ese valor del proceso. El arranque no usa LIVE."
+    return $false
+}
+
+function Test-RedsysMerchantCode {
+    param([string]$Value)
+
+    return $Value -match '^[0-9]{9}$'
+}
+
+function Test-RedsysTerminal {
+    param([string]$Value)
+
+    return $Value -match '^[0-9]{1,3}$'
+}
+
+function Test-RedsysSecret {
+    param([string]$Value)
+
+    if ([string]::IsNullOrEmpty($Value) -or $Value.Length -gt 256) {
+        return $false
+    }
+
+    if ($Value -match '\s') {
+        return $false
+    }
+
+    if ($Value -match '^(?i:live|test)$') {
+        return $false
+    }
+
+    return $true
+}
+
+function New-RedsysMerchantUrl {
+    param([string]$Origin)
+
+    if ([string]::IsNullOrWhiteSpace($Origin)) {
+        return $null
+    }
+
+    $trimmed = $Origin.Trim().TrimEnd("/")
+    if ($trimmed -notmatch '^https://[a-z0-9-]+\.trycloudflare\.com$') {
+        return $null
+    }
+
+    return $trimmed + $script:RedsysPath
+}
+
+function Read-RedsysCredentials {
+    param([string]$MerchantUrl)
+
+    if (-not (Test-RedsysParentEnvironment)) {
+        return $null
+    }
+
+    if ([string]::IsNullOrWhiteSpace((New-RedsysMerchantUrl $MerchantUrl.Replace($script:RedsysPath, "")))) {
+        Write-Fail "No hay una URL de túnel actual para la notificación de Redsys." "No se habilita Redsys y no se reinicia la API."
+        return $null
+    }
+
+    if (-not (Test-ConsoleInteractive)) {
+        Write-Fail "Faltan las credenciales TEST de Redsys y esta terminal no es interactiva." "Ejecuta .\scripts\start-dev.ps1 -WithRedsys en la terminal de Cursor. No pegues la clave en el chat ni en un comando."
+        return $null
+    }
+
+    $merchantCode = (Read-Host "Código de comercio TEST de Redsys (9 dígitos)").Trim()
+    $terminal = (Read-Host "Terminal TEST de Redsys").Trim()
+    $secure = Read-Host -AsSecureString -Prompt "Clave de firma TEST de Redsys"
+    $secret = $null
+    try {
+        $secret = ConvertTo-PlainString $secure
+    }
+    finally {
+        $secure.Dispose()
+    }
+
+    if (-not (Test-RedsysMerchantCode $merchantCode) -or -not (Test-RedsysTerminal $terminal) -or -not (Test-RedsysSecret $secret)) {
+        Write-Fail "El comercio, el terminal o la clave TEST no cumplen el formato de Redsys." "Vuelve a ejecutar el arranque e introdúcelos en la terminal. No se ha guardado nada."
+        return $null
+    }
+
+    $script:SensitiveValues.Add($secret) | Out-Null
+    $script:Report.Redsys = "TEST"
+    $script:Report.MerchantUrl = $MerchantUrl
+    return @{
+        MerchantCode = $merchantCode
+        Terminal = $terminal
+        SecretKey = $secret
+        MerchantUrl = $MerchantUrl
+    }
+}
+
+function New-ApiEnvironment {
+    param($Credentials, $Redsys)
+
+    $environment = @{
+        ASPNETCORE_ENVIRONMENT = "Development"
+        ASPNETCORE_URLS = "http://localhost:5141"
+        "Database__Host" = "127.0.0.1"
+        "Database__Name" = "dominio_sierra"
+        "PayPal__Enabled" = "true"
+        "PayPal__Environment" = "Sandbox"
+        "PayPal__ClientId" = [string]$Credentials.ClientId
+        "PayPal__ClientSecret" = [string]$Credentials.ClientSecret
+        "PayPal__WebhookId" = [string]$Credentials.WebhookId
+        "Notifications__DispatchEnabled" = "false"
+        "Reservations__SweepEnabled" = "false"
+        "Reservations__ProviderReconciliationEnabled" = "false"
+        "Reservations__HoldAlertEnabled" = "false"
+        "InvoiceIssuance__Enabled" = "false"
+        "Redsys__Enabled" = "false"
+        DOTNET_NOLOGO = "1"
+        DOTNET_CLI_TELEMETRY_OPTOUT = "1"
+    }
+
+    if ($null -eq $Redsys) {
+        return $environment
+    }
+
+    $merchantUrl = [string]$Redsys.MerchantUrl
+    $operational = $environment.ASPNETCORE_ENVIRONMENT -eq "Development" `
+        -and (Test-RedsysMerchantCode ([string]$Redsys.MerchantCode)) `
+        -and (Test-RedsysTerminal ([string]$Redsys.Terminal)) `
+        -and (Test-RedsysSecret ([string]$Redsys.SecretKey)) `
+        -and $merchantUrl -eq (New-RedsysMerchantUrl ($merchantUrl.Replace($script:RedsysPath, "")))
+    if (-not $operational) {
+        Write-Fail "La configuración TEST de Redsys está incompleta." "La API no se arranca con Redsys habilitado."
+        return $null
+    }
+
+    $environment["Redsys__Enabled"] = "true"
+    $environment["Redsys__Environment"] = "Test"
+    $environment["Redsys__MerchantCode"] = [string]$Redsys.MerchantCode
+    $environment["Redsys__Terminal"] = [string]$Redsys.Terminal
+    $environment["Redsys__SecretKey"] = [string]$Redsys.SecretKey
+    $environment["Redsys__SignatureVersion"] = "HMAC_SHA512_V2"
+    $environment["Redsys__MerchantUrl"] = $merchantUrl
+    $environment["Redsys__UrlOk"] = $script:RedsysUrlOk
+    $environment["Redsys__UrlKo"] = $script:RedsysUrlKo
+    return $environment
+}
+
+function Set-RedsysLaunchState {
+    param($State, [bool]$Enabled, [string]$Origin)
+
+    $value = [pscustomobject]@{
+        enabled = $Enabled
+        merchantOrigin = $(if ($Enabled) { $Origin } else { "" })
+    }
+    $existing = $State.PSObject.Properties["redsys"]
+    if ($null -ne $existing) {
+        $existing.Value = $value
+    }
+    else {
+        $State | Add-Member -NotePropertyName "redsys" -NotePropertyValue $value -Force
+    }
+
+    Save-DevState $State
+}
+
+function Watch-RedsysMerchantUrl {
+    param($State, [string]$Origin)
+
+    $redsys = Get-PropertyValue $State "redsys"
+    $enabled = Get-PropertyValue $redsys "enabled"
+    $stored = [string](Get-PropertyValue $redsys "merchantOrigin")
+    if ($enabled -ne $true -or [string]::IsNullOrWhiteSpace($stored) -or $stored -eq $Origin) {
+        return
+    }
+
+    $script:Report.Redsys = "MerchantUrl obsoleta"
+    $script:Report.MerchantUrl = $stored.TrimEnd("/") + $script:RedsysPath
+    Write-WarnLine "La MerchantUrl de Redsys sigue en $stored y el túnel actual es $Origin."
+    Write-Info "La API no se reinicia en este paso. PostgreSQL, Angular, el relay y PayPal siguen."
+    Write-Info "Recuperación, solo la API: powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-dev.ps1 -Only Redsys"
+}
+
+function Clear-CredentialBag {
+    param($Bag)
+
+    if ($null -eq $Bag) {
+        return
+    }
+
+    foreach ($name in @($Bag.Keys)) {
+        $Bag[$name] = $null
+    }
+}
+
 function Start-SupervisedProcess {
     param(
         [string]$Name,
@@ -770,18 +981,105 @@ function Start-DevDocker {
     return $true
 }
 
+function Stop-RecordedOwnedService {
+    param($State, [string]$Name, [string]$ChildToken, [int]$Port)
+
+    $service = Get-ServiceState $State $Name
+    if ($null -eq $service) {
+        return -not (Test-TcpPort -Port $Port)
+    }
+
+    $supervisorPid = 0
+    $rawSupervisor = Get-PropertyValue $service "supervisorPid"
+    if ($null -ne $rawSupervisor) {
+        [void][int]::TryParse([string]$rawSupervisor, [ref]$supervisorPid)
+    }
+
+    $childPid = 0
+    $childPidFile = [string](Get-PropertyValue $service "childPidFile")
+    if (-not [string]::IsNullOrWhiteSpace($childPidFile)) {
+        $text = Read-SharedText $childPidFile
+        [void][int]::TryParse($text.Trim(), [ref]$childPid)
+    }
+
+    if ($supervisorPid -gt 0) {
+        $command = Get-ProcessCommandLine $supervisorPid
+        if ($null -ne $command -and $command.IndexOf("dev-supervisor.ps1", [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+            & taskkill.exe /PID $supervisorPid /T /F | Out-Null
+        }
+    }
+
+    if ($childPid -gt 0) {
+        $command = Get-ProcessCommandLine $childPid
+        if ($null -ne $command -and $command.IndexOf($ChildToken, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+            & taskkill.exe /PID $childPid /T /F | Out-Null
+        }
+    }
+
+    $services = Get-PropertyValue $State "services"
+    if ($null -ne $services -and $null -ne $services.PSObject.Properties[$Name]) {
+        [void]$services.PSObject.Properties.Remove($Name)
+    }
+
+    Save-DevState $State
+    $deadline = (Get-Date).AddSeconds(20)
+    while ((Get-Date) -lt $deadline) {
+        if (-not (Test-TcpPort -Port $Port)) {
+            return $true
+        }
+
+        Start-Sleep -Milliseconds 400
+    }
+
+    return -not (Test-TcpPort -Port $Port)
+}
+
 function Start-DevApi {
-    param($State, $Credentials)
+    param(
+        $State,
+        $Credentials,
+        $Redsys,
+        [switch]$RestartOwned,
+        [string]$Step = "[2/5] API"
+    )
 
     Write-Info ""
-    Write-Info "[2/5] API"
+    Write-Info $Step
     $owned = Test-SupervisorAlive (Get-ServiceState $State "api")
     $listening = Test-TcpPort -Port 5141
+    if ($listening -and $RestartOwned) {
+        if (-not $owned) {
+            Write-Fail "La API del puerto 5141 no la controla este script." "No se reinicia y Redsys no se habilita."
+            return $false
+        }
+
+        if ($null -eq $Credentials -or $null -eq $Redsys) {
+            Write-Fail "No se reinicia la API sin PayPal Sandbox y Redsys TEST completos." "El proceso actual sigue en marcha."
+            return $false
+        }
+
+        Write-Info "Se reinicia solo la API para aplicar el túnel actual. PostgreSQL, Angular, relay y Cloudflare siguen."
+        if (-not (Stop-RecordedOwnedService -State $State -Name "api" -ChildToken "launch-profile" -Port 5141)) {
+            Write-Fail "La API anterior no ha liberado el puerto 5141." "No se arranca una segunda API."
+            return $false
+        }
+
+        $owned = $false
+        $listening = $false
+    }
+
     if ($listening) {
         $status = Get-HttpStatusCode -Url "http://localhost:5141/swagger/index.html"
         if ($owned) {
             $script:Report.Api = "en marcha"
             $script:Report.WebhookId = "configurado"
+            $recorded = Get-PropertyValue (Get-PropertyValue $State "redsys") "enabled"
+            $recordedOrigin = [string](Get-PropertyValue (Get-PropertyValue $State "redsys") "merchantOrigin")
+            if ($recorded -eq $true -and -not [string]::IsNullOrWhiteSpace($recordedOrigin)) {
+                $script:Report.Redsys = "TEST"
+                $script:Report.MerchantUrl = $recordedOrigin.TrimEnd("/") + $script:RedsysPath
+            }
+
             Write-Info "La API ya estaba en marcha (http://localhost:5141)."
         }
         else {
@@ -805,25 +1103,17 @@ function Start-DevApi {
         return $false
     }
 
-    Write-Info "Arrancando la API en Development. PayPal queda en Sandbox y los avisos, barridos y conciliaciones quedan apagados."
-    $environment = @{
-        ASPNETCORE_ENVIRONMENT = "Development"
-        ASPNETCORE_URLS = "http://localhost:5141"
-        "Database__Host" = "127.0.0.1"
-        "Database__Name" = "dominio_sierra"
-        "PayPal__Enabled" = "true"
-        "PayPal__Environment" = "Sandbox"
-        "PayPal__ClientId" = [string]$Credentials.ClientId
-        "PayPal__ClientSecret" = [string]$Credentials.ClientSecret
-        "PayPal__WebhookId" = [string]$Credentials.WebhookId
-        "Notifications__DispatchEnabled" = "false"
-        "Reservations__SweepEnabled" = "false"
-        "Reservations__ProviderReconciliationEnabled" = "false"
-        "Reservations__HoldAlertEnabled" = "false"
-        "InvoiceIssuance__Enabled" = "false"
-        "Redsys__Enabled" = "false"
-        DOTNET_NOLOGO = "1"
-        DOTNET_CLI_TELEMETRY_OPTOUT = "1"
+    $redsysMode = $null -ne $Redsys
+    if ($redsysMode) {
+        Write-Info "Arrancando la API en Development con PayPal Sandbox y Redsys TEST. Los avisos, barridos, conciliaciones y facturas quedan apagados."
+    }
+    else {
+        Write-Info "Arrancando la API en Development. PayPal queda en Sandbox y los avisos, barridos y conciliaciones quedan apagados."
+    }
+
+    $environment = New-ApiEnvironment -Credentials $Credentials -Redsys $Redsys
+    if ($null -eq $environment) {
+        return $false
     }
     $apiDirectory = Join-Path $script:RepoRoot "C#\src\DominioDeLaSierra.Api"
     $started = Start-SupervisedProcess `
@@ -850,7 +1140,18 @@ function Start-DevApi {
     }
 
     $script:Report.Api = "en marcha"
-    Write-Info "API lista en http://localhost:5141."
+    if ($redsysMode) {
+        $script:Report.Redsys = "TEST"
+        $script:Report.MerchantUrl = [string]$Redsys.MerchantUrl
+        Write-Info "API lista en http://localhost:5141. Redsys TEST usa el túnel actual."
+    }
+    else {
+        $script:Report.Redsys = "desactivado"
+        $script:Report.MerchantUrl = "no aplica"
+        Set-RedsysLaunchState -State $State -Enabled $false -Origin ""
+        Write-Info "API lista en http://localhost:5141."
+    }
+
     return $true
 }
 
@@ -938,8 +1239,16 @@ function Start-DevAngular {
     return $true
 }
 
+function Test-RelayFilter {
+    $paypal = Get-HttpStatusCode -Url "http://127.0.0.1:5088$($script:WebhookPath)"
+    $redsys = Get-HttpStatusCode -Url "http://127.0.0.1:5088$($script:RedsysPath)"
+    $admin = Get-HttpStatusCode -Url "http://127.0.0.1:5088/admin/login"
+    $payments = Get-HttpStatusCode -Url "http://127.0.0.1:5088/api/v1/checkout/payments"
+    return ($paypal -eq 405 -and $redsys -eq 405 -and $admin -eq 404 -and $payments -eq 404)
+}
+
 function Start-DevRelay {
-    param($State)
+    param($State, [int]$Attempt = 0)
 
     Write-Info ""
     Write-Info "[4/5] Relay"
@@ -947,25 +1256,35 @@ function Start-DevRelay {
     $owned = Test-SupervisorAlive (Get-ServiceState $State "relay")
     $listening = Test-TcpPort -Port 5088
     if ($listening) {
-        $status = Get-HttpStatusCode -Url "http://127.0.0.1:5088$($script:WebhookPath)"
         $script:Report.Relay = $(if ($owned) { "en marcha" } else { "ajeno" })
-        if ($owned) {
-            Write-Info "El relay ya estaba en marcha (http://127.0.0.1:5088)."
-        }
-        else {
-            Write-WarnLine "El puerto 5088 ya está ocupado. No se inicia otro relay."
-        }
+        if (Test-RelayFilter) {
+            if ($owned) {
+                Write-Info "El relay ya estaba en marcha (http://127.0.0.1:5088)."
+            }
+            else {
+                Write-WarnLine "El puerto 5088 ya está ocupado. No se inicia otro relay."
+            }
 
-        if ($status -eq 405) {
-            Write-Info "GET del webhook local devuelve 405: el filtro admite solo POST en la ruta exacta."
+            Write-Info "El filtro local admite solo POST del webhook PayPal y POST de la notificación Redsys. /admin y el checkout responden 404."
             return $true
         }
 
-        Write-Fail "El puerto 5088 no ha devuelto 405 en la ruta del webhook (HTTP $status)." "Detén el proceso que ocupa ese puerto y vuelve a ejecutar .\scripts\start-dev.ps1."
+        if ($Attempt -eq 0 -and $owned) {
+            Write-Info "El relay en marcha no tiene el filtro actual. Se reinicia solo ese proceso."
+            if (-not (Stop-RecordedOwnedService -State $State -Name "relay" -ChildToken "PayPalWebhookRelay" -Port 5088)) {
+                Write-Fail "El relay anterior no ha liberado el puerto 5088." "No se arranca un segundo relay."
+                return $false
+            }
+
+            return Start-DevRelay -State $State -Attempt 1
+        }
+
+        $status = Get-HttpStatusCode -Url "http://127.0.0.1:5088$($script:WebhookPath)"
+        Write-Fail "El puerto 5088 no aplica el filtro actual (webhook HTTP $status)." "Detén el proceso que ocupa ese puerto y vuelve a ejecutar .\scripts\start-dev.ps1."
         return $false
     }
 
-    Write-Info "Arrancando el relay. Solo reenvía POST $($script:WebhookPath) hacia la API local."
+    Write-Info "Arrancando el relay. Solo reenvía POST $($script:WebhookPath) y POST $($script:RedsysPath)."
     $started = Start-SupervisedProcess `
         -Name "relay" `
         -FilePath $script:DotNetPath `
@@ -980,15 +1299,15 @@ function Start-DevRelay {
 
     Set-ServiceState $State "relay" $started
     $status = Wait-HttpStatusCode -Url "http://127.0.0.1:5088$($script:WebhookPath)" -Expected @(405) -TimeoutSec 120
-    if ($status -ne 405) {
+    if ($status -ne 405 -or -not (Test-RelayFilter)) {
         $script:Report.Relay = "error"
-        Write-Fail "El relay no ha respondido 405 (HTTP $status)." "Revisa .\.dev\logs\relay.err.log y vuelve a ejecutar .\scripts\start-dev.ps1."
+        Write-Fail "El relay no ha aplicado el filtro de PayPal y Redsys (HTTP $status)." "Revisa .\.dev\logs\relay.err.log y vuelve a ejecutar .\scripts\start-dev.ps1."
         Get-SafeLogTail (Join-Path $script:LogRoot "relay.err.log") | ForEach-Object { Write-Host $_ }
         return $false
     }
 
     $script:Report.Relay = "en marcha"
-    Write-Info "Relay listo. Un GET local devuelve 405 y no abre el panel ni el resto de la API."
+    Write-Info "Relay listo. Solo admite los dos POST. /admin y el resto de la API responden 404."
     return $true
 }
 
@@ -1311,6 +1630,32 @@ function Test-PublicTunnel {
         }
     }
 
+    $redsysUrl = $Origin.TrimEnd("/") + $script:RedsysPath
+    $redsys = Get-CurlProbe -Url $redsysUrl -Addresses $probeAddresses
+    if ($redsys.HttpCode -ne 405) {
+        return @{
+            Ok = $false
+            WebhookUrl = $webhookUrl
+            Reason = "redsys"
+            Status = [int]$redsys.HttpCode
+            ExitCode = [int]$redsys.ExitCode
+            DnsSource = [string]$resolved.Source
+        }
+    }
+
+    $paymentsUrl = $Origin.TrimEnd("/") + "/api/v1/checkout/payments"
+    $payments = Get-CurlProbe -Url $paymentsUrl -Addresses $probeAddresses
+    if ($payments.HttpCode -ne 404) {
+        return @{
+            Ok = $false
+            WebhookUrl = $webhookUrl
+            Reason = "privado"
+            Status = [int]$payments.HttpCode
+            ExitCode = [int]$payments.ExitCode
+            DnsSource = [string]$resolved.Source
+        }
+    }
+
     return @{
         Ok = $true
         WebhookUrl = $webhookUrl
@@ -1408,7 +1753,8 @@ function Publish-TunnelSuccess {
     $script:Report.WebhookUrl = [string]$Check.WebhookUrl
     Write-Info "HTTP 405 confirma conectividad y que el relay rechaza GET."
     Write-Info "No confirma la firma del webhook ni registra la URL en PayPal."
-    Write-Info "GET /admin/login a través del túnel devuelve 404: el panel no está expuesto."
+    Write-Info "GET /admin/login y el checkout a través del túnel devuelven 404."
+    Write-Info "GET de la notificación Redsys devuelve 405: la ruta existe y no acepta el navegador."
     Write-Info "La URL cambia cada vez que se crea el túnel. La registrada en PayPal tiene que ser esta:"
     Write-Info $script:Report.WebhookUrl
 }
@@ -1427,8 +1773,13 @@ function Write-TunnelFailure {
         return
     }
 
-    if ($Check.Reason -eq "admin") {
-        Write-Fail "El túnel ha respondido /admin/login con HTTP $($Check.Status). Tiene que ser 404." "No se usa esa URL. API, Angular y relay siguen en marcha."
+    if ($Check.Reason -eq "admin" -or $Check.Reason -eq "privado") {
+        Write-Fail "El túnel ha expuesto una ruta privada (HTTP $($Check.Status), $($Check.Reason)). Tiene que ser 404." "No se usa esa URL. API, Angular y relay siguen en marcha."
+        return
+    }
+
+    if ($Check.Reason -eq "redsys") {
+        Write-Fail "La notificación pública de Redsys no ha devuelto 405 (HTTP $($Check.Status))." "El túnel no se sustituye. Ejecuta .\scripts\start-dev.ps1 para renovar solo el relay y vuelve a comprobar Cloudflare."
         return
     }
 
@@ -1441,7 +1792,7 @@ function Write-TunnelFailure {
 }
 
 function Start-DevCloudflare {
-    param($State)
+    param($State, [bool]$ReportStaleMerchant = $true)
 
     Write-Info ""
     Write-Info "[5/5] Cloudflare"
@@ -1512,11 +1863,16 @@ function Start-DevCloudflare {
         Write-Info "Hay conexión registrada. La URL del log no se da por buena hasta que el nombre resuelva y el webhook responda."
         $check = Test-PublicTunnel -Origin $origin
         if ($check.Ok) {
+            $script:TunnelOrigin = $origin
             Publish-TunnelSuccess $check
+            if ($ReportStaleMerchant) {
+                Watch-RedsysMerchantUrl -State $State -Origin $origin
+            }
+
             return $true
         }
 
-        if ($check.Reason -eq "admin" -or $restartsLeft -le 0) {
+        if ($check.Reason -eq "admin" -or $check.Reason -eq "privado" -or $check.Reason -eq "redsys" -or $restartsLeft -le 0) {
             Write-TunnelFailure $check
             return $false
         }
@@ -1541,6 +1897,8 @@ function Show-Summary {
     Write-Info "Client ID: $($script:Report.ClientId)"
     Write-Info "Webhook ID: $($script:Report.WebhookId)"
     Write-Info "URL pública del webhook: $($script:Report.WebhookUrl)"
+    Write-Info "Redsys: $($script:Report.Redsys)"
+    Write-Info "MerchantUrl: $($script:Report.MerchantUrl)"
     Write-Info ""
     Write-Info "Logs:"
     Write-Info "  Get-Content -Wait .\.dev\logs\api.out.log"
@@ -1552,8 +1910,17 @@ function Show-Summary {
     Write-Info "  powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\stop-dev.ps1"
     Write-Info "Para reintentar solo Cloudflare, sin credenciales y sin reiniciar el resto:"
     Write-Info "  powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-dev.ps1 -Only Cloudflare"
+    Write-Info "Para PayPal Sandbox y Redsys TEST, con la URL del túnel actual:"
+    Write-Info "  powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-dev.ps1 -WithRedsys"
+    Write-Info "Si ese túnel cambia y la MerchantUrl queda vieja, solo se reinicia la API:"
+    Write-Info "  powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-dev.ps1 -Only Redsys"
     Write-Info "El checkout de Development sigue limitado a un Administrator autenticado."
-    Write-Info "Stripe y Redsys no se activan. No se crean pedidos ni pagos."
+    if ($script:Report.Redsys -eq "TEST") {
+        Write-Info "Redsys queda en TEST. No se ha enviado ningún pago a la pasarela."
+    }
+    else {
+        Write-Info "Stripe no se activa. Redsys permanece desactivado en este arranque. No se crean pedidos ni pagos."
+    }
 
     if ($script:Failures.Count -gt 0) {
         Write-Info ""
@@ -1600,6 +1967,12 @@ try {
     if ($null -eq $script:CloudflaredPath) {
         Write-WarnLine "cloudflared no está disponible. El túnel no se abrirá; el script no instala herramientas."
     }
+    if ($Only -and $WithRedsys) {
+        Write-Fail "Elige un solo modo: -Only Cloudflare, -Only Redsys o -WithRedsys." "No se reinicia ningún servicio."
+        Show-Summary
+        exit 1
+    }
+
     if ($Only -eq "Cloudflare") {
         Write-Info "Reintento solo de Cloudflare. No se piden credenciales ni se reinician API, Angular, relay ni PostgreSQL."
         if ([string]::IsNullOrWhiteSpace($script:CloudflaredPath)) {
@@ -1621,6 +1994,87 @@ try {
         Start-DevCloudflare $state | Out-Null
         Show-Summary
         if ($script:Failures.Count -gt 0) {
+            exit 1
+        }
+
+        exit 0
+    }
+
+    if ($Only -eq "Redsys") {
+        Write-Info "Recuperación de Redsys TEST. Solo se toca la API, y el relay si su filtro no es el actual."
+        if ([string]::IsNullOrWhiteSpace($script:CloudflaredPath) -or $null -eq $script:DotNetPath) {
+            Write-Fail "Hacen falta dotnet y cloudflared." "No se reinicia la API."
+            Show-Summary
+            exit 1
+        }
+
+        if (-not (Test-DotNet10Sdk)) {
+            Write-Fail "No hay un SDK de .NET 10." "No se reinicia la API."
+            Show-Summary
+            exit 1
+        }
+
+        $dockerInfo = Invoke-Native -File "docker" -Arguments @("info") -WorkingDirectory $script:RepoRoot
+        if ($dockerInfo.ExitCode -ne 0) {
+            Write-Fail "Docker Desktop no está disponible." "No se reinicia la API."
+            Show-Summary
+            exit 1
+        }
+
+        $state = Read-DevState
+        if (-not (Test-TcpPort -Port 5432)) {
+            if (-not (Start-DevDocker $state)) {
+                Show-Summary
+                exit 1
+            }
+        }
+        else {
+            $script:Report.Postgres = "OK"
+            if (Test-TcpPort -Port 8025) {
+                $script:Report.Mailpit = "OK"
+            }
+        }
+
+        if (-not (Start-DevRelay $state)) {
+            Write-Fail "Sin el filtro actual del relay no se actualiza Redsys." "La API sigue como estaba."
+            Show-Summary
+            exit 1
+        }
+
+        if (-not (Start-DevCloudflare -State $state -ReportStaleMerchant $false)) {
+            Write-Fail "Sin el túnel actual no se cambia la API." "PayPal, Angular y PostgreSQL siguen como estaban."
+            Show-Summary
+            exit 1
+        }
+
+        $merchantUrl = New-RedsysMerchantUrl $script:TunnelOrigin
+        $paypal = Read-PayPalCredentials
+        $redsys = $null
+        if ($null -ne $paypal -and -not [string]::IsNullOrWhiteSpace($merchantUrl)) {
+            $redsys = Read-RedsysCredentials -MerchantUrl $merchantUrl
+        }
+
+        $apiReady = $false
+        if ($null -ne $paypal -and $null -ne $redsys) {
+            $apiReady = Start-DevApi -State $state -Credentials $paypal -Redsys $redsys -RestartOwned -Step "[API] Redsys TEST"
+            if ($apiReady) {
+                Set-RedsysLaunchState -State $state -Enabled $true -Origin $script:TunnelOrigin
+            }
+        }
+
+        Clear-CredentialBag $paypal
+        Clear-CredentialBag $redsys
+        if (-not $apiReady) {
+            Update-RunningReport
+            if ($script:Report.Api -eq "en marcha") {
+                $script:Report.ClientId = "configurado en el proceso de la API"
+                $script:Report.WebhookId = "configurado"
+                Write-Info "La API que ya estaba en marcha no se ha reiniciado."
+            }
+        }
+
+        Show-Summary
+        if (-not $apiReady -or $script:Failures.Count -gt 0) {
             exit 1
         }
 
@@ -1650,6 +2104,77 @@ try {
 
     $state = Read-DevState
     $dockerReady = Start-DevDocker $state
+    if ($WithRedsys) {
+        if (-not $dockerReady) {
+            Write-Fail "Sin PostgreSQL no se habilita Redsys." "Corrige Docker y vuelve a ejecutar .\scripts\start-dev.ps1 -WithRedsys."
+            Show-Summary
+            exit 1
+        }
+
+        if ($null -ne $script:NodePath) {
+            Start-DevAngular $state | Out-Null
+        }
+
+        $relayReady = $false
+        if ($null -ne $script:DotNetPath) {
+            $relayReady = Start-DevRelay $state
+        }
+
+        $tunnelReady = $false
+        if ($relayReady) {
+            $tunnelReady = Start-DevCloudflare -State $state -ReportStaleMerchant $false
+        }
+
+        $paypal = $null
+        $redsys = $null
+        $apiReady = $false
+        if ($tunnelReady) {
+            $merchantUrl = New-RedsysMerchantUrl $script:TunnelOrigin
+            $listening = Test-TcpPort -Port 5141
+            $ownedApi = Test-SupervisorAlive (Get-ServiceState $state "api")
+            if ($listening -and -not $ownedApi) {
+                Write-Fail "El puerto 5141 está ocupado por una API ajena." "No se cambia su entorno ni se habilita Redsys."
+            }
+            elseif ([string]::IsNullOrWhiteSpace($merchantUrl)) {
+                Write-Fail "El túnel actual no ha dado una URL válida para Redsys." "La API no se reinicia."
+            }
+            else {
+                $paypal = Read-PayPalCredentials
+                if ($null -ne $paypal) {
+                    $redsys = Read-RedsysCredentials -MerchantUrl $merchantUrl
+                }
+
+                if ($null -ne $paypal -and $null -ne $redsys) {
+                    $apiReady = Start-DevApi -State $state -Credentials $paypal -Redsys $redsys -RestartOwned:$listening -Step "[5/5] API"
+                    if ($apiReady) {
+                        Set-RedsysLaunchState -State $state -Enabled $true -Origin $script:TunnelOrigin
+                    }
+                }
+            }
+        }
+        else {
+            Write-Fail "Sin el túnel actual no se habilita Redsys." "Si la API ya estaba en marcha, no se reinicia."
+        }
+
+        Clear-CredentialBag $paypal
+        Clear-CredentialBag $redsys
+        if (-not $apiReady) {
+            Update-RunningReport
+            if ($script:Report.Api -eq "en marcha") {
+                $script:Report.ClientId = "configurado en el proceso de la API"
+                $script:Report.WebhookId = "configurado"
+                Write-Info "La API que ya estaba en marcha no se ha reiniciado."
+            }
+        }
+
+        Show-Summary
+        if (-not $apiReady -or $script:Failures.Count -gt 0) {
+            exit 1
+        }
+
+        exit 0
+    }
+
     $credentials = $null
     $apiListening = Test-TcpPort -Port 5141
     if ($dockerReady -and -not $apiListening) {
@@ -1671,12 +2196,7 @@ try {
         Write-Fail "Sin PostgreSQL no se arranca la API." "Corrige Docker y vuelve a ejecutar .\scripts\start-dev.ps1."
     }
 
-    if ($null -ne $credentials) {
-        $credentials.ClientSecret = $null
-        $credentials.ClientId = $null
-        $credentials.WebhookId = $null
-        $credentials = $null
-    }
+    Clear-CredentialBag $credentials
 
     if ($null -ne $script:NodePath) {
         Start-DevAngular $state | Out-Null

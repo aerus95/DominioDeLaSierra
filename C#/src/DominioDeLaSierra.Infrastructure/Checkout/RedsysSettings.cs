@@ -4,7 +4,8 @@ using Microsoft.Extensions.Configuration;
 namespace DominioDeLaSierra.Infrastructure.Checkout;
 
 /// <summary>
-/// Redsys solo opera en el entorno de pruebas y con HMAC_SHA512_V2.
+/// Redsys solo opera con Environment=Test y HMAC_SHA512_V2, también si el proceso es Production.
+/// Live no es operativo y no hay paso automático a la pasarela real.
 /// La clave llega por configuración (Redsys__SecretKey) y no se escribe en el registro.
 /// </summary>
 public sealed class RedsysSettings
@@ -77,9 +78,15 @@ public sealed class RedsysSettings
 
     private static bool IsReturnUrl(string value)
     {
-        return Uri.TryCreate(value, UriKind.Absolute, out var url)
-            && url.Scheme is "https" or "http"
-            && string.IsNullOrEmpty(url.UserInfo)
-            && url.Host is not "sis.redsys.es" and not "sis-t.redsys.es";
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var url)
+            || url.Scheme is not ("https" or "http")
+            || !string.IsNullOrEmpty(url.UserInfo)
+            || url.Host is "sis.redsys.es" or "sis-t.redsys.es")
+        {
+            return false;
+        }
+
+        var loopback = url.Host is "localhost" or "127.0.0.1";
+        return url.Scheme == "https" || loopback;
     }
 }

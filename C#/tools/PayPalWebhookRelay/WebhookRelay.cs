@@ -9,6 +9,7 @@ namespace PayPalWebhookRelay;
 public sealed class WebhookRelay : IAsyncDisposable
 {
     public const string ExactPath = "/api/v1/checkout/paypal/webhook";
+    public const string RedsysPath = "/api/v1/checkout/redsys/notification";
     public const int MaxBodyBytes = 256 * 1024;
 
     private static readonly string[] ForwardedHeaders =
@@ -24,13 +25,13 @@ public sealed class WebhookRelay : IAsyncDisposable
 
     private readonly HttpListener listener = new();
     private readonly HttpClient upstream;
-    private readonly Uri upstreamWebhook;
+    private readonly Uri upstreamRoot;
     private readonly CancellationTokenSource stopping = new();
 
-    private WebhookRelay(int port, Uri upstreamRoot)
+    private WebhookRelay(int port, Uri apiRoot)
     {
         listener.Prefixes.Add($"http://127.0.0.1:{port}/");
-        upstreamWebhook = new Uri(upstreamRoot, ExactPath);
+        upstreamRoot = apiRoot;
         var handler = new SocketsHttpHandler { AllowAutoRedirect = false };
         upstream = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(60) };
     }
@@ -92,7 +93,9 @@ public sealed class WebhookRelay : IAsyncDisposable
             var url = context.Request.Url;
             var path = url?.AbsolutePath ?? string.Empty;
             var query = url?.Query ?? string.Empty;
-            if (!string.Equals(path, ExactPath, StringComparison.Ordinal) || query.Length > 0)
+            var paypal = string.Equals(path, ExactPath, StringComparison.Ordinal);
+            var redsys = string.Equals(path, RedsysPath, StringComparison.Ordinal);
+            if ((!paypal && !redsys) || query.Length > 0)
             {
                 await WriteAsync(context.Response, 404, "No encontrado.");
                 Console.Error.WriteLine("Petición rechazada.");
@@ -114,10 +117,15 @@ public sealed class WebhookRelay : IAsyncDisposable
                 return;
             }
 
-            using var forwarded = new HttpRequestMessage(HttpMethod.Post, upstreamWebhook);
+            using var forwarded = new HttpRequestMessage(HttpMethod.Post, new Uri(upstreamRoot, path));
             forwarded.Content = new ByteArrayContent(body);
             foreach (var name in ForwardedHeaders)
             {
+                if (!paypal && !string.Equals(name, "Content-Type", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
                 var value = context.Request.Headers[name];
                 if (string.IsNullOrEmpty(value))
                 {

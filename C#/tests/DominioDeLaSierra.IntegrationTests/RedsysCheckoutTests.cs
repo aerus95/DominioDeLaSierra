@@ -37,6 +37,12 @@ public sealed class RedsysCheckoutTests(PostgresFixture fixture) : DatabaseTest(
 
         Assert.Equal(HttpStatusCode.OK, first.StatusCode);
         Assert.Equal(HttpStatusCode.OK, second.StatusCode);
+        Assert.Matches("^[0-9a-f]{32}$", first.Headers.GetValues("X-Checkout-Correlation").Single());
+        Assert.Matches("^[0-9a-f]{32}$", second.Headers.GetValues("X-Checkout-Correlation").Single());
+        Assert.NotEqual(
+            first.Headers.GetValues("X-Checkout-Correlation").Single(),
+            second.Headers.GetValues("X-Checkout-Correlation").Single());
+        Assert.False(stripe.Headers.Contains("X-Checkout-Correlation"));
         Assert.Equal(HttpStatusCode.OK, stripe.StatusCode);
         var payment = await ReadPaymentAsync(first);
         var repeated = await ReadPaymentAsync(second);
@@ -73,6 +79,32 @@ public sealed class RedsysCheckoutTests(PostgresFixture fixture) : DatabaseTest(
     }
 
     [Fact]
+    public async Task Does_not_emit_a_redirect_when_the_operation_is_not_committed()
+    {
+        await using var host = RedsysHost();
+        host.Services.GetRequiredService<RedsysRedirectFailureProbe>().FailNext();
+        var harness = new CatalogHarness(host.Services);
+        var categoryId = await harness.CreateCategoryAsync();
+        var wine = await harness.CreateProductAsync(categoryId, "RDS-ROLL", ProductKind.Wine, initialStock: 5, vintage: "2024");
+
+        var response = await PayAsync(host.CreateClient(), wine.Id, "Redsys", "rds-roll-" + Guid.NewGuid().ToString("N"));
+        var body = await response.Content.ReadAsStringAsync();
+
+        await using var scope = host.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var order = await db.Orders.Include(item => item.Payments).SingleAsync();
+        var reservation = await db.StockReservations.SingleAsync(item => item.OrderId == order.Id);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.DoesNotContain("Ds_Signature", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("Ds_MerchantParameters", body, StringComparison.Ordinal);
+        Assert.Equal(OrderStatus.PendingPayment, order.Status);
+        Assert.Empty(order.Payments);
+        Assert.Equal(StockReservationStatus.Reserved, reservation.Status);
+        Assert.Equal(4, await db.Stocks.Where(item => item.ProductId == wine.Id).Select(item => item.Quantity).SingleAsync());
+    }
+
+    [Fact]
     public async Task Confirms_a_matching_authorization_and_ignores_the_browser_return()
     {
         await using var host = RedsysHost();
@@ -94,6 +126,7 @@ public sealed class RedsysCheckoutTests(PostgresFixture fixture) : DatabaseTest(
         Assert.Equal(StockReservationStatus.Confirmed, after.Reservation);
         Assert.Equal(4, after.Stock);
         Assert.Equal(0, after.Invoices);
+        Assert.Equal(1, after.Confirmations);
         await using var invoiceScope = host.Services.CreateAsyncScope();
         var panel = await invoiceScope.ServiceProvider.GetRequiredService<IInvoiceIssuance>().DescribeAsync(started.Payment.OrderId);
         Assert.Equal(InvoiceIssuanceRules.UnspecifiedProviderMessage, panel!.Notice);
@@ -283,6 +316,67 @@ public sealed class RedsysCheckoutTests(PostgresFixture fixture) : DatabaseTest(
         Assert.Equal(StockReservationStatus.Confirmed, snapshot.Reservation);
         Assert.Equal(4, snapshot.Stock);
         Assert.Equal(1, snapshot.Events);
+        Assert.Equal(1, snapshot.Confirmations);
+    }
+
+    [Fact]
+    public async Task Ignores_an_unknown_operation_and_a_wrong_terminal_without_releasing_stock()
+    {
+        await using var host = RedsysHost();
+        var started = await StartAsync(host, "RDS-UNK", 5);
+        var client = host.CreateClient();
+        var unknownParameters = RedsysSignature.EncodeParameters(new Dictionary<string, string>
+        {
+            ["Ds_Amount"] = started.Payment.TotalCents.ToString(),
+            ["Ds_Currency"] = RedsysSignature.EuroCurrency,
+            ["Ds_Order"] = "999988887777",
+            ["Ds_MerchantCode"] = Merchant,
+            ["Ds_Terminal"] = "1",
+            ["Ds_Response"] = "0000",
+            ["Ds_TransactionType"] = "0"
+        });
+        var unknownFields = new Dictionary<string, string>
+        {
+            ["Ds_SignatureVersion"] = RedsysSignature.Version,
+            ["Ds_MerchantParameters"] = unknownParameters,
+            ["Ds_Signature"] = RedsysSignature.Sign(unknownParameters, "999988887777", ExampleKey)
+        };
+        var terminal = await NotifyAsync(client, started, "0000", started.Payment.TotalCents, terminal: "002");
+        var unknown = await PostNoticeAsync(client, unknownFields);
+        var snapshot = await SnapshotAsync(host, started);
+
+        Assert.Equal(HttpStatusCode.OK, terminal.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, unknown.StatusCode);
+        Assert.Equal(OrderStatus.PendingPayment, snapshot.Status);
+        Assert.Equal(StockReservationStatus.Reserved, snapshot.Reservation);
+        Assert.Equal(4, snapshot.Stock);
+        Assert.Contains(RedsysNotificationRules.MerchantMessage, snapshot.Attention);
+        Assert.Equal(0, snapshot.Confirmations);
+    }
+
+    [Fact]
+    public async Task Confirms_one_notice_and_one_email_after_the_reservation_clock()
+    {
+        await using var host = RedsysHost();
+        var started = await StartAsync(host, "RDS-LATE", 5);
+        var createdAt = DateTimeOffset.UtcNow;
+        await using (var scope = host.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var expires = createdAt.AddMinutes(-5);
+            var orderCreated = expires.AddMinutes(-30);
+            await db.Database.ExecuteSqlInterpolatedAsync(
+                $"""UPDATE "Orders" SET "CreatedAt" = {orderCreated}, "ReservationExpiresAt" = {expires} WHERE "Id" = {started.Payment.OrderId}""");
+        }
+
+        var confirmed = await NotifyAsync(host.CreateClient(), started, "0000", started.Payment.TotalCents);
+        var snapshot = await SnapshotAsync(host, started);
+
+        Assert.Equal(HttpStatusCode.OK, confirmed.StatusCode);
+        Assert.Equal(OrderStatus.Paid, snapshot.Status);
+        Assert.Equal(StockReservationStatus.Confirmed, snapshot.Reservation);
+        Assert.Equal(4, snapshot.Stock);
+        Assert.Equal(1, snapshot.Confirmations);
     }
 
     [Fact]
@@ -364,9 +458,10 @@ public sealed class RedsysCheckoutTests(PostgresFixture fixture) : DatabaseTest(
         string response,
         long amountCents,
         string currency = RedsysSignature.EuroCurrency,
-        string? merchant = null)
+        string? merchant = null,
+        string terminal = "1")
     {
-        return await PostNoticeAsync(client, Notice(started, response, amountCents.ToString(), currency, merchant ?? Merchant, "1"));
+        return await PostNoticeAsync(client, Notice(started, response, amountCents.ToString(), currency, merchant ?? Merchant, terminal));
     }
 
     private static Dictionary<string, string> Notice(
@@ -422,7 +517,8 @@ public sealed class RedsysCheckoutTests(PostgresFixture fixture) : DatabaseTest(
             stock,
             payment.Events.Count(item => item.ProcessedAt is not null),
             await db.Invoices.CountAsync(),
-            payment.Events.Select(item => item.AttentionReason).Where(item => item is not null).Cast<string>().ToArray());
+            payment.Events.Select(item => item.AttentionReason).Where(item => item is not null).Cast<string>().ToArray(),
+            await db.OrderNotifications.CountAsync(item => item.OrderId == order.Id && item.Kind == OrderNotificationKind.PaidConfirmation));
     }
 
     private WebApplicationFactory<Program> RedsysHost(string environment = "Test")
@@ -457,5 +553,6 @@ public sealed class RedsysCheckoutTests(PostgresFixture fixture) : DatabaseTest(
         int Stock,
         int Events,
         int Invoices,
-        IReadOnlyList<string> Attention);
+        IReadOnlyList<string> Attention,
+        int Confirmations);
 }

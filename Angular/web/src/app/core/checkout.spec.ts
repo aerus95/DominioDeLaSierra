@@ -31,7 +31,11 @@ import {
   paypalCaptureClaim,
   paypalReturnShouldCapture,
   paypalSandboxCheckoutUrl,
+  choosePaymentProvider,
+  orderedPaymentProviders,
   paymentButtonLabel,
+  paymentSimulationNotice,
+  paymentMethodNote,
   providerSent,
   readCheckoutAccess,
   readCurrentCheckout,
@@ -222,10 +226,27 @@ describe('presupuesto del checkout', () => {
     assert.equal(providerSent('Stripe'), 'Stripe');
     assert.equal(providerSent(null), undefined);
     assert.equal(providerSent('Bizum'), undefined);
+    assert.equal(paymentSimulationNotice, 'Pagos de prueba. No se realiza ningún cargo real.');
     assert.equal(paymentButtonLabel('PayPal'), 'Pagar con PayPal');
     assert.equal(paymentButtonLabel('Redsys'), 'Pagar con tarjeta');
     assert.equal(paymentButtonLabel('Stripe'), 'Pagar con Stripe');
     assert.equal(paymentButtonLabel(null), 'El pago no está disponible');
+    const announced = [
+      { code: 'Redsys', displayName: 'Tarjeta bancaria (Redsys)' },
+      { code: 'PayPal', displayName: 'PayPal' },
+      { code: 'Bizum', displayName: 'Bizum' }
+    ];
+    assert.deepEqual(orderedPaymentProviders(announced).map((offer) => offer.code), ['PayPal', 'Redsys']);
+    assert.equal(choosePaymentProvider(announced, null), 'PayPal');
+    assert.equal(choosePaymentProvider(announced, 'Redsys'), 'Redsys');
+    assert.equal(choosePaymentProvider(announced, 'PayPal'), 'PayPal');
+    assert.equal(choosePaymentProvider([{ code: 'Redsys', displayName: 'Tarjeta bancaria (Redsys)' }], 'PayPal'), 'Redsys');
+    assert.equal(choosePaymentProvider([{ code: 'Stripe', displayName: 'Stripe' }, ...announced], null), 'Stripe');
+    assert.equal(choosePaymentProvider([], 'PayPal'), null);
+    assert.equal(paymentMethodNote('Redsys'), 'Pasarela bancaria de Redsys');
+    assert.equal(paymentMethodNote('PayPal'), 'Cuenta PayPal');
+    assert.equal(paymentMethodNote('Bizum'), '');
+    assert.equal(providerSent(choosePaymentProvider(announced, 'Redsys')), 'Redsys');
     assert.equal(paypalReturnShouldCapture('checkout/exito', 'Paid', 'PayPal'), false);
     assert.equal(paypalReturnShouldCapture('checkout/exito', 'PendingPayment', 'PayPal'), true);
     assert.equal(paypalReturnShouldCapture('checkout/exito', 'PendingPayment', null), true);
@@ -257,6 +278,17 @@ describe('presupuesto del checkout', () => {
       checkoutUrl: 'https://sis.redsys.es/sis/realizarPago',
       redirectMethod: 'POST',
       redirectFields: fields
+    }), null);
+    assert.equal(paymentRedirect({
+      checkoutUrl: 'https://sis-t.redsys.es:25443/sis/realizarPago',
+      redirectMethod: 'GET',
+      provider: 'Redsys',
+      redirectFields: fields
+    }), null);
+    assert.equal(paymentRedirect({
+      checkoutUrl: 'https://sis-t.redsys.es:25443/sis/realizarPago',
+      redirectMethod: 'POST',
+      redirectFields: { Ds_SignatureVersion: 'HMAC_SHA512_V2' }
     }), null);
     assert.deepEqual(paymentRedirect({
       checkoutUrl: 'https://www.sandbox.paypal.com/checkoutnow?token=5O190127TN364715T',

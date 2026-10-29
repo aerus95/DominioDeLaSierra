@@ -7,6 +7,7 @@ using DominioDeLaSierra.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Npgsql;
 
 namespace DominioDeLaSierra.Infrastructure.Checkout;
@@ -19,7 +20,9 @@ public sealed class OrderPaymentSessionService(
     PayPalPaymentStarter paypal,
     IConfiguration configuration,
     ICheckout checkout,
-    IOrderStock orderStock) : IOrderPaymentSessions
+    IOrderStock orderStock,
+    CheckoutCorrelation correlation,
+    ILogger<OrderPaymentSessionService> logger) : IOrderPaymentSessions
 {
     public async Task<CheckoutPaymentDto> PayAsync(
         string? idempotencyKey,
@@ -88,26 +91,38 @@ public sealed class OrderPaymentSessionService(
         PlaceGuestOrderRequest request,
         CancellationToken cancellationToken)
     {
-        var placement = await checkout.PlaceGuestOrderAsync(
-            idempotencyKey,
-            request,
-            cancellationToken,
-            OrderAmounts.ReservationDuration);
-        if (!string.Equals(placement.Order.Status, nameof(OrderStatus.PendingPayment), StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException(CheckoutLimits.HoldReleasedMessage);
-        }
-
+        logger.LogInformation("Checkout {Correlation} Redsys iniciado.", correlation.Id);
+        GuestOrderDto? placed = null;
         try
         {
-            return await redsys.StartAsync(placement.Order, cancellationToken);
+            var placement = await checkout.PlaceGuestOrderAsync(
+                idempotencyKey,
+                request,
+                cancellationToken,
+                OrderAmounts.ReservationDuration);
+            placed = placement.Order;
+            if (!string.Equals(placed.Status, nameof(OrderStatus.PendingPayment), StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(CheckoutLimits.HoldReleasedMessage);
+            }
+
+            var payment = await redsys.StartAsync(placed, cancellationToken);
+            logger.LogInformation("Checkout {Correlation} pedido {OrderId} formulario emitido.", correlation.Id, payment.OrderId);
+            return payment;
         }
-        catch (InvalidOperationException exception) when (
-            exception.Message == StripeCheckoutExpiry.ExpiredMessage
-            || exception.Message == OrderStockRules.MissingReservationMessage)
+        catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            await ReleaseUnpayableHoldAsync(placement.Order.OrderId, cancellationToken);
-            throw new InvalidOperationException(CheckoutLimits.HoldReleasedMessage);
+            logger.LogWarning("Checkout {Correlation} Redsys no emitido. Tipo {ExceptionType}.", correlation.Id, exception.GetType().Name);
+            if (placed is not null
+                && exception is InvalidOperationException invalid
+                && (invalid.Message == StripeCheckoutExpiry.ExpiredMessage
+                    || invalid.Message == OrderStockRules.MissingReservationMessage))
+            {
+                await ReleaseUnpayableHoldAsync(placed.OrderId, cancellationToken);
+                throw new InvalidOperationException(CheckoutLimits.HoldReleasedMessage);
+            }
+
+            throw;
         }
     }
 

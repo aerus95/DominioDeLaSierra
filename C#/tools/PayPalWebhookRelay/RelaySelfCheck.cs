@@ -28,6 +28,8 @@ public static class RelaySelfCheck
         failures += await ExpectAsync(client, relayRoot, HttpMethod.Post, "/api/v1/checkout/paypal/capture", [], noHeaders, 404, seen, forwarded: false, "capture-post");
         failures += await ExpectAsync(client, relayRoot, HttpMethod.Post, WebhookRelay.ExactPath + "?evento=1", [], noHeaders, 404, seen, forwarded: false, "webhook-query");
         failures += await ExpectAsync(client, relayRoot, HttpMethod.Post, WebhookRelay.ExactPath + "/", [], noHeaders, 404, seen, forwarded: false, "webhook-barra");
+        failures += await ExpectAsync(client, relayRoot, HttpMethod.Get, WebhookRelay.RedsysPath, [], noHeaders, 405, seen, forwarded: false, "redsys-get");
+        failures += await ExpectAsync(client, relayRoot, HttpMethod.Post, "/api/v1/checkout/redsys/capture", [], noHeaders, 404, seen, forwarded: false, "redsys-otra");
 
         var body = new byte[] { 0x7B, 0x22, 0x61, 0x22, 0x3A, 0x01, 0xFF, 0x00 };
         var headers = new Dictionary<string, string>
@@ -56,6 +58,28 @@ public static class RelaySelfCheck
         else
         {
             Console.WriteLine("webhook-post cuerpo-integro=true cookie-reenviada=false autorizacion-reenviada=false");
+        }
+
+        var form = Encoding.UTF8.GetBytes("Ds_SignatureVersion=HMAC_SHA512_V2&Ds_MerchantParameters=ZXk&Ds_Signature=YQ");
+        var formHeaders = new Dictionary<string, string>
+        {
+            ["Content-Type"] = "application/x-www-form-urlencoded",
+            ["Cookie"] = "panel=no-reenviar",
+            ["Authorization"] = "Bearer no-reenviar"
+        };
+        failures += await ExpectAsync(client, relayRoot, HttpMethod.Post, WebhookRelay.RedsysPath, form, formHeaders, 204, seen, forwarded: true, "redsys-post");
+        if (seen.Path != WebhookRelay.RedsysPath
+            || !seen.Body.AsSpan().SequenceEqual(form)
+            || seen.SawCookie
+            || seen.SawAuthorization
+            || seen.ContentType != "application/x-www-form-urlencoded")
+        {
+            Console.WriteLine("redsys-post cuerpo-integro=false");
+            failures++;
+        }
+        else
+        {
+            Console.WriteLine("redsys-post cuerpo-integro=true cookie-reenviada=false autorizacion-reenviada=false");
         }
 
         var oversized = new byte[WebhookRelay.MaxBodyBytes + 1];

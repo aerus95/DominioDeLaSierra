@@ -1,5 +1,7 @@
 using DominioDeLaSierra.Api.Checkout;
 using DominioDeLaSierra.Application.Checkout;
+using DominioDeLaSierra.Domain;
+using DominioDeLaSierra.Infrastructure.Checkout;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Configuration;
@@ -16,7 +18,8 @@ public sealed class CheckoutController(
     IOrderPaymentSessions sessions,
     ICheckoutOutcome outcomes,
     IPaymentProviders providers,
-    IConfiguration configuration) : ControllerBase
+    IConfiguration configuration,
+    CheckoutCorrelation correlation) : ControllerBase
 {
     [HttpGet("payment-providers")]
     public ActionResult<IReadOnlyList<PaymentProviderOfferDto>> PaymentProviders()
@@ -97,6 +100,11 @@ public sealed class CheckoutController(
 
         try
         {
+            if (string.Equals(request.PaymentProvider, nameof(PaymentProvider.Redsys), StringComparison.Ordinal))
+            {
+                Response.Headers["X-Checkout-Correlation"] = correlation.Id;
+            }
+
             return Ok(await sessions.PayAsync(idempotencyKey, request, cancellationToken));
         }
         catch (ArgumentException exception)

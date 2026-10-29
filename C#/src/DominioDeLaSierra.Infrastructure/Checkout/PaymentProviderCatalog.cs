@@ -20,7 +20,7 @@ public sealed class PaymentProviderCatalog(IConfiguration configuration) : IPaym
 
         if (RedsysSettings.Read(configuration).IsOperational)
         {
-            offers.Add(new PaymentProviderOfferDto(nameof(PaymentProvider.Redsys), "Redsys"));
+            offers.Add(new PaymentProviderOfferDto(nameof(PaymentProvider.Redsys), "Tarjeta bancaria (Redsys)"));
         }
 
         if (PayPalSettings.Read(configuration).IsOperational)

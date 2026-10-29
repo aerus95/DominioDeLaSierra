@@ -219,6 +219,21 @@ public class PaymentProviderTests
         Assert.Equal(nameof(PaymentProvider.PayPal), offer.Code);
         catalog.EnsureSelectable("PayPal");
         Assert.Equal(PaymentProviderRules.UnavailableMessage, Assert.Throws<InvalidOperationException>(() => catalog.EnsureSelectable("Stripe")).Message);
+
+        paypal["PayPal:Environment"] = "Live";
+        Assert.DoesNotContain(
+            new PaymentProviderCatalog(new ConfigurationBuilder().AddInMemoryCollection(paypal).Build()).Configured(),
+            offer => offer.Code == "PayPal");
+        paypal["PayPal:Environment"] = "Sandbox";
+        paypal["PayPal:ReturnUrl"] = "https://srv2027085.hstgr.cloud/checkout/exito";
+        paypal["PayPal:CancelUrl"] = "https://srv2027085.hstgr.cloud/checkout/cancelado";
+        Assert.Contains(
+            new PaymentProviderCatalog(new ConfigurationBuilder().AddInMemoryCollection(paypal).Build()).Configured(),
+            offer => offer.Code == "PayPal");
+        paypal["PayPal:ReturnUrl"] = "https://www.paypal.com/checkout/exito";
+        Assert.DoesNotContain(
+            new PaymentProviderCatalog(new ConfigurationBuilder().AddInMemoryCollection(paypal).Build()).Configured(),
+            offer => offer.Code == "PayPal");
     }
 
     [Fact]
@@ -226,11 +241,22 @@ public class PaymentProviderTests
     {
         var catalog = new PaymentProviderCatalog(new ConfigurationBuilder().AddInMemoryCollection(OperationalRedsys()).Build());
         Assert.Equal(["Stripe", "Redsys"], catalog.Configured().Select(offer => offer.Code).ToArray());
+        Assert.Equal("Tarjeta bancaria (Redsys)", catalog.Configured().Single(offer => offer.Code == "Redsys").DisplayName);
         catalog.EnsureSelectable("Redsys");
 
         var live = OperationalRedsys();
         live["Redsys:Environment"] = "Live";
         Assert.DoesNotContain(new PaymentProviderCatalog(new ConfigurationBuilder().AddInMemoryCollection(live).Build()).Configured(), offer => offer.Code == "Redsys");
+
+        var publicTest = OperationalRedsys();
+        publicTest["Redsys:MerchantUrl"] = "https://srv2027085.hstgr.cloud/api/v1/checkout/redsys/notification";
+        publicTest["Redsys:UrlOk"] = "https://srv2027085.hstgr.cloud/checkout/exito";
+        publicTest["Redsys:UrlKo"] = "https://srv2027085.hstgr.cloud/checkout/cancelado";
+        Assert.Contains(new PaymentProviderCatalog(new ConfigurationBuilder().AddInMemoryCollection(publicTest).Build()).Configured(), offer => offer.Code == "Redsys");
+
+        var clearHttp = OperationalRedsys();
+        clearHttp["Redsys:MerchantUrl"] = "http://srv2027085.hstgr.cloud/api/v1/checkout/redsys/notification";
+        Assert.DoesNotContain(new PaymentProviderCatalog(new ConfigurationBuilder().AddInMemoryCollection(clearHttp).Build()).Configured(), offer => offer.Code == "Redsys");
 
         var legacy = OperationalRedsys();
         legacy["Redsys:SignatureVersion"] = "HMAC_SHA256_V1";

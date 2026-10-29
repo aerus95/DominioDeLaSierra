@@ -17,7 +17,8 @@ namespace DominioDeLaSierra.Infrastructure.Checkout;
 public sealed class RedsysPaymentStarter(
     ApplicationDbContext dbContext,
     IRedsysOperationNumbers operationNumbers,
-    RedsysSettings settings)
+    RedsysSettings settings,
+    RedsysRedirectFailureProbe redirectFailures)
 {
     public async Task<CheckoutPaymentDto> StartAsync(GuestOrderDto order, CancellationToken cancellationToken)
     {
@@ -74,6 +75,11 @@ public sealed class RedsysPaymentStarter(
 
         var fields = RedirectFields(stored.TotalCents, operation);
         await dbContext.SaveChangesAsync(cancellationToken);
+        if (redirectFailures.ConsumeFailure())
+        {
+            throw new InvalidOperationException(RedsysRedirectFailureProbe.NotEmittedMessage);
+        }
+
         await transaction.CommitAsync(cancellationToken);
         return new CheckoutPaymentDto(
             stored.Id,

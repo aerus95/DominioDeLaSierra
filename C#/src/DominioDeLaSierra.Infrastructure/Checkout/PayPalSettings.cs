@@ -6,7 +6,8 @@ namespace DominioDeLaSierra.Infrastructure.Checkout;
 /// <summary>
 /// PayPal solo opera en Sandbox. Client ID, Secret y Webhook ID llegan por configuración
 /// (PayPal__ClientId, PayPal__ClientSecret, PayPal__WebhookId) y no se escriben en el registro.
-/// Live no es operativo. Sin cualquiera de estos datos, el catálogo no anuncia PayPal.
+/// Live no es operativo. El retorno puede ser localhost o un HTTPS público; nunca un host de PayPal.
+/// Sin cualquiera de estos datos, el catálogo no anuncia PayPal.
 /// </summary>
 public sealed class PayPalSettings
 {
@@ -54,8 +55,8 @@ public sealed class PayPalSettings
             && IsCredential(clientId)
             && IsCredential(secret)
             && IsCredential(webhookId)
-            && IsLoopback(returnUrl, "/checkout/exito")
-            && IsLoopback(cancelUrl, "/checkout/cancelado");
+            && IsReturnUrl(returnUrl, "/checkout/exito")
+            && IsReturnUrl(cancelUrl, "/checkout/cancelado");
         return new PayPalSettings(
             operational,
             operational ? clientId : string.Empty,
@@ -70,12 +71,18 @@ public sealed class PayPalSettings
         return value.Length is >= 8 and <= 127 && !value.Any(char.IsWhiteSpace);
     }
 
-    private static bool IsLoopback(string value, string path)
+    private static bool IsReturnUrl(string value, string path)
     {
-        return Uri.TryCreate(value, UriKind.Absolute, out var url)
-            && url.Scheme is "http" or "https"
-            && string.IsNullOrEmpty(url.UserInfo)
-            && url.Host is "localhost" or "127.0.0.1"
-            && string.Equals(url.AbsolutePath, path, StringComparison.Ordinal);
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var url)
+            || url.Scheme is not ("http" or "https")
+            || !string.IsNullOrEmpty(url.UserInfo)
+            || !string.Equals(url.AbsolutePath, path, StringComparison.Ordinal)
+            || url.Host.EndsWith("paypal.com", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var loopback = url.Host is "localhost" or "127.0.0.1";
+        return url.Scheme == "https" || loopback;
     }
 }

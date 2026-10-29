@@ -161,6 +161,40 @@ export function selectablePaymentProviders(
     knownPaymentProviders.has(offer.code) && offer.displayName.trim().length > 0);
 }
 
+const paymentProviderDisplayOrder = ['PayPal', 'Redsys', 'Stripe'];
+const paymentProviderPreference = ['Stripe', 'PayPal', 'Redsys'];
+
+export function orderedPaymentProviders(
+  offers: readonly PaymentProviderOffer[] | null | undefined
+): PaymentProviderOffer[] {
+  return selectablePaymentProviders(offers).slice().sort((left, right) =>
+    paymentProviderRank(left.code) - paymentProviderRank(right.code));
+}
+
+export function choosePaymentProvider(
+  offers: readonly PaymentProviderOffer[] | null | undefined,
+  current: string | null | undefined
+): string | null {
+  const selectable = selectablePaymentProviders(offers);
+  if (current && selectable.some((offer) => offer.code === current)) {
+    return current;
+  }
+
+  return paymentProviderPreference.find((code) => selectable.some((offer) => offer.code === code)) ?? null;
+}
+
+export function paymentMethodNote(code: string | null | undefined): string {
+  if (code === 'Redsys') return 'Pasarela bancaria de Redsys';
+  if (code === 'PayPal') return 'Cuenta PayPal';
+  if (code === 'Stripe') return 'Pago con Stripe';
+  return '';
+}
+
+function paymentProviderRank(code: string): number {
+  const rank = paymentProviderDisplayOrder.indexOf(code);
+  return rank < 0 ? paymentProviderDisplayOrder.length : rank;
+}
+
 export function placePayload(
   customer: CheckoutCustomerInput,
   lines: readonly CheckoutLineInput[],
@@ -382,6 +416,8 @@ export function paymentRedirect(payment: Pick<CheckoutPayment, 'checkoutUrl' | '
 export function providerSent(selected: string | null | undefined): string | undefined {
   return selected === 'Stripe' || selected === 'Redsys' || selected === 'PayPal' ? selected : undefined;
 }
+
+export const paymentSimulationNotice = 'Pagos de prueba. No se realiza ningún cargo real.';
 
 export function paymentButtonLabel(selected: string | null | undefined): string {
   if (selected === 'PayPal') return 'Pagar con PayPal';

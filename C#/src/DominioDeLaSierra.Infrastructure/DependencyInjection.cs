@@ -58,6 +58,8 @@ public static class DependencyInjection
         services.AddScoped(provider => RedsysSettings.Read(provider.GetRequiredService<IConfiguration>()));
         services.AddScoped<RedsysPaymentStarter>();
         services.AddSingleton<RedsysNotificationFailureProbe>();
+        services.AddSingleton<RedsysRedirectFailureProbe>();
+        services.AddScoped<CheckoutCorrelation>();
         services.AddScoped<IRedsysNotifications, RedsysNotificationService>();
         services.AddScoped(provider => PayPalSettings.Read(provider.GetRequiredService<IConfiguration>()));
         services.AddSingleton<PayPalOrderScript>();

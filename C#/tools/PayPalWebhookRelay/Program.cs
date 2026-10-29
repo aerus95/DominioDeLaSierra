@@ -24,7 +24,7 @@ Console.CancelKeyPress += (_, eventArgs) =>
 try
 {
     await using var relay = WebhookRelay.Start(port, upstream);
-    Console.Error.WriteLine($"Receptor en http://127.0.0.1:{port}. Solo admite POST {WebhookRelay.ExactPath}.");
+    Console.Error.WriteLine($"Receptor en http://127.0.0.1:{port}. Solo admite POST {WebhookRelay.ExactPath} y POST {WebhookRelay.RedsysPath}.");
     await stopped.Task;
     return 0;
 }
